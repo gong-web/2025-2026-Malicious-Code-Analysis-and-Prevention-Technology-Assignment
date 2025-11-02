@@ -1,6 +1,19 @@
 # YARA-X Manager
 
-一个功能完整的 YARA 规则管理系统,用于恶意代码检测和防护。
+<div align="center">
+
+**一个功能完整的 YARA 规则管理系统,用于恶意代码检测和防护**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18+-61dafb.svg)](https://reactjs.org/)
+
+[功能特性](#功能特性) • [快速开始](#快速开始) • [文档](#文档) • [贡献](#贡献指南)
+
+</div>
+
+---
 
 ## 项目概述
 
