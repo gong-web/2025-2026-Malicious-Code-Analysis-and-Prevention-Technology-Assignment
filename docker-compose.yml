@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # 后端服务
+  backend:
+    build: ./backend
+    container_name: yara-manager-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/yara_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./rules:/app/rules
+      - ./uploads:/app/uploads
+    depends_on:
+      - db
+      - redis
+    command: python main.py
+
+  # 前端服务
+  frontend:
+    build: ./frontend
+    container_name: yara-manager-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm start
+
+  # 数据库
+  db:
+    image: postgres:15
+    container_name: yara-manager-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=yara_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/schema:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: yara-manager-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
