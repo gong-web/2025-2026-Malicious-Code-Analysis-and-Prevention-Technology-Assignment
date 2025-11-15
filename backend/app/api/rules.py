@@ -1,191 +1,231 @@
 """
-YARA 规则管理 API
+YARA 规则管理 API - 适配 data.sqlite 数据库
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
-from app.models.rule import YaraRule, RuleStatus, RuleSeverity
+from app.api.models_shared import Rule
 from pydantic import BaseModel
 import yara
+import os
+import shutil
+from pathlib import Path
 
 router = APIRouter()
 
+# API请求模型
+class ToggleRequest(BaseModel):
+    """规则启用/禁用请求"""
+    active: bool
 
-# Pydantic 模型
-class RuleCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-    content: str
-    category: Optional[str] = None
-    tags: Optional[str] = None
-    severity: RuleSeverity = RuleSeverity.MEDIUM
-    author: Optional[str] = None
-    version: Optional[str] = "1.0"
-
-
-class RuleUpdate(BaseModel):
-    description: Optional[str] = None
-    content: Optional[str] = None
-    category: Optional[str] = None
-    tags: Optional[str] = None
-    severity: Optional[RuleSeverity] = None
-    status: Optional[RuleStatus] = None
-
-
+# API响应模型
 class RuleResponse(BaseModel):
     id: int
     name: str
-    description: Optional[str]
-    category: Optional[str]
-    severity: RuleSeverity
-    status: RuleStatus
-    author: Optional[str]
-    version: Optional[str]
-    match_count: int
-    created_at: str
-    
-    class Config:
-        from_attributes = True
+    path: str
+    active: bool
+    file_exists: bool = False
+    author: Optional[str] = None
+    description: Optional[str] = None
+    date: Optional[str] = None
+    version: Optional[str] = None
+    tags: List[str] = []
+
+# 规则目录
+RULES_DIR = Path("data/rules")
+RULES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-@router.get("/", response_model=List[RuleResponse])
+@router.get("/")
 async def list_rules(
     skip: int = 0,
     limit: int = 100,
-    category: Optional[str] = None,
-    status: Optional[RuleStatus] = None,
     db: Session = Depends(get_db)
 ):
-    """获取 YARA 规则列表"""
-    query = db.query(YaraRule)
+    """获取规则列表"""
+    rules = db.query(Rule).offset(skip).limit(limit).all()
     
-    if category:
-        query = query.filter(YaraRule.category == category)
-    if status:
-        query = query.filter(YaraRule.status == status)
+    result = []
+    for rule in rules:
+        # 检查文件是否存在
+        file_exists = os.path.exists(rule.path)
+        
+        # 尝试解析规则元数据
+        metadata = {"author": None, "description": None, "date": None, "version": None, "tags": []}
+        if file_exists:
+            try:
+                with open(rule.path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # 简单解析meta字段
+                    for line in content.split('\n'):
+                        if 'author' in line and '=' in line:
+                            metadata['author'] = line.split('=')[1].strip().strip('"')
+                        elif 'description' in line and '=' in line:
+                            metadata['description'] = line.split('=')[1].strip().strip('"')
+                        elif 'date' in line and '=' in line:
+                            metadata['date'] = line.split('=')[1].strip().strip('"')
+                        elif 'version' in line and '=' in line:
+                            metadata['version'] = line.split('=')[1].strip().strip('"')
+            except:
+                pass
+        
+        result.append(RuleResponse(
+            id=rule.id,
+            name=rule.name,
+            path=rule.path,
+            active=rule.active,
+            file_exists=file_exists,
+            **metadata
+        ))
     
-    rules = query.offset(skip).limit(limit).all()
-    return rules
+    return result
 
 
-@router.get("/{rule_id}", response_model=RuleResponse)
+@router.get("/{rule_id}")
 async def get_rule(rule_id: int, db: Session = Depends(get_db)):
-    """获取单个 YARA 规则"""
-    rule = db.query(YaraRule).filter(YaraRule.id == rule_id).first()
+    """获取单个规则详情"""
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
     if not rule:
         raise HTTPException(status_code=404, detail="规则未找到")
-    return rule
-
-
-@router.post("/", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
-async def create_rule(rule: RuleCreate, db: Session = Depends(get_db)):
-    """创建新的 YARA 规则"""
     
-    # 检查规则名称是否已存在
-    existing = db.query(YaraRule).filter(YaraRule.name == rule.name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="规则名称已存在")
+    file_exists = os.path.exists(rule.path)
+    metadata = {"author": None, "description": None, "date": None, "version": None, "tags": []}
     
-    # 验证 YARA 规则语法
-    try:
-        yara.compile(source=rule.content)
-    except yara.SyntaxError as e:
-        raise HTTPException(status_code=400, detail=f"YARA 规则语法错误: {str(e)}")
-    
-    # 创建规则
-    db_rule = YaraRule(**rule.dict())
-    db.add(db_rule)
-    db.commit()
-    db.refresh(db_rule)
-    
-    return db_rule
-
-
-@router.put("/{rule_id}", response_model=RuleResponse)
-async def update_rule(rule_id: int, rule: RuleUpdate, db: Session = Depends(get_db)):
-    """更新 YARA 规则"""
-    db_rule = db.query(YaraRule).filter(YaraRule.id == rule_id).first()
-    if not db_rule:
-        raise HTTPException(status_code=404, detail="规则未找到")
-    
-    # 如果更新了内容,验证语法
-    if rule.content:
+    if file_exists:
         try:
-            yara.compile(source=rule.content)
-        except yara.SyntaxError as e:
-            raise HTTPException(status_code=400, detail=f"YARA 规则语法错误: {str(e)}")
+            with open(rule.path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                for line in content.split('\n'):
+                    if 'author' in line and '=' in line:
+                        metadata['author'] = line.split('=')[1].strip().strip('"')
+                    elif 'description' in line and '=' in line:
+                        metadata['description'] = line.split('=')[1].strip().strip('"')
+                    elif 'date' in line and '=' in line:
+                        metadata['date'] = line.split('=')[1].strip().strip('"')
+                    elif 'version' in line and '=' in line:
+                        metadata['version'] = line.split('=')[1].strip().strip('"')
+        except:
+            pass
     
-    # 更新字段
-    for key, value in rule.dict(exclude_unset=True).items():
-        setattr(db_rule, key, value)
-    
-    db.commit()
-    db.refresh(db_rule)
-    
-    return db_rule
+    return RuleResponse(
+        id=rule.id,
+        name=rule.name,
+        path=rule.path,
+        active=rule.active,
+        file_exists=file_exists,
+        **metadata
+    )
 
 
-@router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{rule_id}")
 async def delete_rule(rule_id: int, db: Session = Depends(get_db)):
-    """删除 YARA 规则"""
-    db_rule = db.query(YaraRule).filter(YaraRule.id == rule_id).first()
-    if not db_rule:
+    """删除规则"""
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if not rule:
         raise HTTPException(status_code=404, detail="规则未找到")
     
-    db.delete(db_rule)
+    # 删除文件
+    if os.path.exists(rule.path):
+        try:
+            os.remove(rule.path)
+        except:
+            pass
+    
+    db.delete(rule)
     db.commit()
     
-    return None
+    return {"message": "规则已删除"}
+
+
+@router.patch("/{rule_id}/toggle")
+async def toggle_rule(
+    rule_id: int,
+    data: ToggleRequest,
+    db: Session = Depends(get_db)
+):
+    """切换规则启用/禁用状态"""
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="规则未找到")
+    
+    old_state = rule.active
+    rule.active = data.active
+    db.commit()
+    db.refresh(rule)
+    
+    print(f"[RULE] ID={rule_id}, {rule.name}: {old_state} → {rule.active}")
+    
+    return {
+        "message": "状态已更新",
+        "id": rule.id,
+        "name": rule.name,
+        "active": rule.active,
+        "old_active": old_state
+    }
 
 
 @router.post("/upload")
-async def upload_rule_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """上传 YARA 规则文件"""
+async def upload_rule_files(files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+    """上传YARA规则文件(支持多文件)"""
+    uploaded = []
+    errors = []
     
-    # 读取文件内容
-    content = await file.read()
-    content = content.decode('utf-8')
-    
-    # 验证语法
-    try:
-        yara.compile(source=content)
-    except yara.SyntaxError as e:
-        raise HTTPException(status_code=400, detail=f"YARA 规则语法错误: {str(e)}")
-    
-    # 提取规则名称 (简单实现)
-    rule_name = file.filename.replace('.yar', '').replace('.yara', '')
-    
-    # 检查是否已存在
-    existing = db.query(YaraRule).filter(YaraRule.name == rule_name).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="规则名称已存在")
-    
-    # 创建规则
-    db_rule = YaraRule(
-        name=rule_name,
-        content=content,
-        status=RuleStatus.ACTIVE
-    )
-    db.add(db_rule)
-    db.commit()
-    
-    return {"message": "规则上传成功", "rule_id": db_rule.id}
-
-
-@router.post("/{rule_id}/compile")
-async def compile_rule(rule_id: int, db: Session = Depends(get_db)):
-    """编译 YARA 规则"""
-    db_rule = db.query(YaraRule).filter(YaraRule.id == rule_id).first()
-    if not db_rule:
-        raise HTTPException(status_code=404, detail="规则未找到")
-    
-    try:
-        compiled = yara.compile(source=db_rule.content)
-        db_rule.is_compiled = True
-        db.commit()
+    for file in files:
+        try:
+            # 验证文件扩展名
+            if not (file.filename.endswith('.yar') or file.filename.endswith('.yara')):
+                errors.append(f"{file.filename}: 不支持的文件格式")
+                continue
+            
+            # 读取内容
+            content = await file.read()
+            content_str = content.decode('utf-8')
+            
+            # 验证YARA语法
+            try:
+                yara.compile(source=content_str)
+            except yara.SyntaxError as e:
+                errors.append(f"{file.filename}: YARA语法错误 - {str(e)}")
+                continue
+            
+            # 提取规则名
+            rule_name = file.filename.replace('.yar', '').replace('.yara', '')
+            
+            # 检查是否已存在
+            existing = db.query(Rule).filter(Rule.name == rule_name).first()
+            if existing:
+                errors.append(f"{file.filename}: 规则名已存在")
+                continue
+            
+            # 保存文件
+            file_path = RULES_DIR / file.filename
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
+            # 添加到数据库
+            new_rule = Rule(
+                name=rule_name,
+                path=str(file_path),
+                active=True
+            )
+            db.add(new_rule)
+            db.commit()
+            db.refresh(new_rule)
+            
+            uploaded.append({
+                "id": new_rule.id,
+                "name": rule_name,
+                "path": str(file_path)
+            })
         
-        return {"message": "规则编译成功"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"编译失败: {str(e)}")
+        except Exception as e:
+            errors.append(f"{file.filename}: {str(e)}")
+    
+    return {
+        "uploaded": len(uploaded),
+        "failed": len(errors),
+        "rules": uploaded,
+        "errors": errors
+    }

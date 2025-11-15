@@ -1,10 +1,10 @@
 import React from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from 'antd'
-import Dashboard from './pages/Dashboard'
-import RuleManagement from './pages/RuleManagement'
-import ScanManagement from './pages/ScanManagement'
-import Reports from './pages/Reports'
+import DashboardPage from './pages/DashboardPage'
+import RulePage from './pages/RulePage'
+import ScanPage from './pages/ScanPage'
+import ReportsPage from './pages/ReportsPage'
 import MainLayout from './components/MainLayout'
 
 const { Content } = Layout
@@ -14,10 +14,10 @@ const App: React.FC = () => {
     <MainLayout>
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/rules" element={<RuleManagement />} />
-        <Route path="/scan" element={<ScanManagement />} />
-        <Route path="/reports" element={<Reports />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/rules" element={<RulePage />} />
+        <Route path="/scan" element={<ScanPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
       </Routes>
     </MainLayout>
   )

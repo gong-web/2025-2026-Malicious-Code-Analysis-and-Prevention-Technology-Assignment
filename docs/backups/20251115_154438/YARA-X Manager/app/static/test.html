@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>YARA-X Scanner Test Panel</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        h2 { margin-top: 30px; }
+        pre { background: #f0f0f0; padding: 10px; white-space: pre-wrap; }
+        button { margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<h1>YARA-X Scanner Test Panel</h1>
+
+<!-- ==================== SAMPLES ====================== -->
+
+<h2>Upload Samples</h2>
+<input type="file" id="sampleFiles" multiple>
+<button onclick="uploadSamples()">Upload Samples</button>
+<pre id="sampleUploadOut"></pre>
+
+<h2>List Samples</h2>
+<button onclick="listSamples()">List</button>
+<pre id="sampleListOut"></pre>
+
+<h2>Get Sample By Name</h2>
+<input type="text" id="sampleName" placeholder="filename">
+<button onclick="getSample()">Get Sample</button>
+<pre id="sampleOneOut"></pre>
+
+<!-- ==================== RULES ====================== -->
+
+<h2>Upload Rules</h2>
+<input type="file" id="ruleFiles" multiple>
+<button onclick="uploadRules()">Upload Rules</button>
+<pre id="ruleUploadOut"></pre>
+
+<h2>List Rules</h2>
+<button onclick="listRules()">List</button>
+<pre id="ruleListOut"></pre>
+
+<h2>Delete Rules</h2>
+<input type="text" id="ruleIds" placeholder="e.g. 1,2,3">
+<button onclick="deleteRules()">Delete</button>
+<pre id="ruleDeleteOut"></pre>
+
+<!-- ==================== SCANNING ====================== -->
+
+<h2>Start Scan</h2>
+<button onclick="startScan()">Start Scan</button>
+<pre id="scanStartOut"></pre>
+
+<h2>Live Scan Status (SSE)</h2>
+<button onclick="startSSE()">Start SSE</button>
+<button onclick="stopSSE()">Stop SSE</button>
+<pre id="scanStatusOut"></pre>
+
+<h2>Get Scan Result</h2>
+<input type="text" id="scanName" placeholder="sample filename">
+<button onclick="getScanResult()">Get Result</button>
+<pre id="scanResultOut"></pre>
+
+<script>
+const api = location.origin;
+let evtSource = null;
+
+/* ====================== SAMPLES ====================== */
+
+async function uploadSamples() {
+    const files = document.getElementById("sampleFiles").files;
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+
+    const r = await fetch(api + "/api/samples/upload", {
+        method: "POST",
+        body: form
+    });
+    document.getElementById("sampleUploadOut").textContent = await r.text();
+}
+
+async function listSamples() {
+    const r = await fetch(api + "/api/samples/");
+    document.getElementById("sampleListOut").textContent = await r.text();
+}
+
+async function getSample() {
+    const name = document.getElementById("sampleName").value;
+    const r = await fetch(api + "/api/samples/" + encodeURIComponent(name));
+    document.getElementById("sampleOneOut").textContent = await r.text();
+}
+
+/* ====================== RULES ====================== */
+
+async function uploadRules() {
+    const files = document.getElementById("ruleFiles").files;
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+
+    const r = await fetch(api + "/api/rules/upload", {
+        method: "POST",
+        body: form
+    });
+    document.getElementById("ruleUploadOut").textContent = await r.text();
+}
+
+async function listRules() {
+    const r = await fetch(api + "/api/rules/");
+    document.getElementById("ruleListOut").textContent = await r.text();
+}
+
+async function deleteRules() {
+    const ids = document.getElementById("ruleIds").value;
+    const r = await fetch(api + "/api/rules/delete/" + ids, {
+        method: "POST"
+    });
+    document.getElementById("ruleDeleteOut").textContent = await r.text();
+}
+
+/* ====================== SCANS ====================== */
+
+async function startScan() {
+    const r = await fetch(api + "/api/scans/start", { 
+        method: "POST",
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            sample_names: [],
+            rule_ids: null
+        })
+    });
+    document.getElementById("scanStartOut").textContent = await r.text();
+}
+
+function startSSE() {
+    stopSSE();
+    evtSource = new EventSource(api + "/api/scans/status");
+    const out = document.getElementById("scanStatusOut");
+    out.textContent = "";
+
+    evtSource.onmessage = e => out.textContent = e.data;
+    evtSource.onerror = () => stopSSE();
+}
+
+function stopSSE() {
+    if (evtSource) {
+        evtSource.close();
+        evtSource = null;
+    }
+}
+
+async function getScanResult() {
+    const name = document.getElementById("scanName").value;
+    const r = await fetch(api + "/api/scans/" + encodeURIComponent(name) + "/results");
+    document.getElementById("scanResultOut").textContent = await r.text();
+}
+</script>
+
+</body>
+</html>

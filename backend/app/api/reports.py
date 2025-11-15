@@ -4,13 +4,13 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, Integer
+from sqlalchemy import func
 from typing import List, Dict, Any
 from app.core.database import get_db
-from app.models.scan import ScanTask, ScanResult, ThreatLevel
-from app.models.rule import YaraRule
+from app.api.models_shared import Scan, Rule
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import json
 
 router = APIRouter()
 
@@ -26,176 +26,106 @@ class ReportStats(BaseModel):
 
 
 @router.get("/stats")
-async def get_statistics(db: Session = Depends(get_db)) -> ReportStats:
+async def get_statistics(db: Session = Depends(get_db)) -> Dict[str, int]:
     """获取统计数据"""
-    
-    # 总扫描任务数
-    total_scans = db.query(func.count(ScanTask.id)).scalar()
-    
-    # 总扫描文件数
-    total_files = db.query(func.sum(ScanTask.scanned_files)).scalar() or 0
-    
-    # 威胁检测数
-    total_threats = db.query(func.sum(ScanTask.detected_files)).scalar() or 0
-    
-    # 按威胁级别统计
-    clean = db.query(func.count(ScanResult.id)).filter(
-        ScanResult.threat_level == ThreatLevel.CLEAN
-    ).scalar()
-    
-    malicious = db.query(func.count(ScanResult.id)).filter(
-        ScanResult.threat_level == ThreatLevel.MALICIOUS
-    ).scalar()
-    
-    suspicious = db.query(func.count(ScanResult.id)).filter(
-        ScanResult.threat_level == ThreatLevel.SUSPICIOUS
-    ).scalar()
-    
-    return ReportStats(
-        total_scans=total_scans,
-        total_files_scanned=total_files,
-        total_threats_detected=total_threats,
-        clean_files=clean,
-        malicious_files=malicious,
-        suspicious_files=suspicious
-    )
+    try:
+        # 使用本地定义的Scan模型
+        total_scans = db.query(func.count(Scan.id)).scalar() or 0
+        
+        # 统计恶意扫描 (通过解析result JSON)
+        all_scans = db.query(Scan).all()
+        malicious_count = 0
+        for scan in all_scans:
+            if scan.result:
+                result_data = json.loads(scan.result)
+                if result_data.get("is_malicious", False):
+                    malicious_count += 1
+        
+        clean_count = total_scans - malicious_count
+        active_rules = db.query(func.count(Rule.id)).filter(Rule.active == True).scalar() or 0
+        
+        return {
+            "total_scans": total_scans,
+            "malicious_count": malicious_count,
+            "clean_count": clean_count,
+            "active_rules": active_rules
+        }
+    except Exception as e:
+        print(f"Error in get_statistics: {e}")
+        import traceback
+        traceback.print_exc()
+        # 如果出错，返回默认值
+        return {
+            "total_scans": 0,
+            "malicious_count": 0,
+            "clean_count": 0,
+            "active_rules": 0
+        }
 
 
 @router.get("/recent")
-async def get_recent_detections(limit: int = 10, db: Session = Depends(get_db)):
-    """获取最近的检测结果"""
-    
-    results = db.query(ScanResult).filter(
-        ScanResult.is_malicious == True
-    ).order_by(
-        ScanResult.scanned_at.desc()
-    ).limit(limit).all()
-    
-    return [{
-        "id": r.id,
-        "file_name": r.file_name,
-        "file_hash": r.file_hash,
-        "threat_level": r.threat_level,
-        "matched_rules": r.matched_rules,
-        "scanned_at": r.scanned_at.isoformat() if r.scanned_at else None
-    } for r in results]
+async def get_recent_scans(limit: int = 20, db: Session = Depends(get_db)):
+    """获取最近的扫描记录"""
+    try:
+        scans = db.query(Scan).order_by(Scan.id.desc()).limit(limit).all()
+        
+        results = []
+        for scan in scans:
+            # 解析result JSON
+            result_data = json.loads(scan.result) if scan.result else {}
+            is_malicious = result_data.get("is_malicious", False)
+            matches = result_data.get("matches", [])
+            
+            results.append({
+                "id": scan.id,
+                "filename": scan.filename,
+                "is_malicious": is_malicious,
+                "match_count": len(matches),
+                "scan_time": scan.started_at,
+                "status": scan.status,
+                "matches": matches
+            })
+        
+        return results
+    except Exception as e:
+        print(f"Error in get_recent_scans: {e}")
+        return []
 
 
-@router.get("/top-threats")
-async def get_top_threats(limit: int = 10, db: Session = Depends(get_db)):
-    """获取最常见的威胁"""
-    
-    # 按文件哈希分组,统计出现次数
-    results = db.query(
-        ScanResult.file_hash,
-        ScanResult.file_name,
-        func.count(ScanResult.id).label('count')
-    ).filter(
-        ScanResult.is_malicious == True
-    ).group_by(
-        ScanResult.file_hash,
-        ScanResult.file_name
-    ).order_by(
-        func.count(ScanResult.id).desc()
-    ).limit(limit).all()
-    
-    return [{
-        "file_hash": r.file_hash,
-        "file_name": r.file_name,
-        "detection_count": r.count
-    } for r in results]
-
-
-@router.get("/rule-effectiveness")
-async def get_rule_effectiveness(db: Session = Depends(get_db)):
-    """获取规则有效性统计"""
-    
-    rules = db.query(YaraRule).all()
-    
-    effectiveness = []
-    for rule in rules:
-        # 计算该规则的命中次数
-        # 这是一个简化实现,实际需要解析 matched_rules JSON
-        effectiveness.append({
-            "rule_name": rule.name,
-            "category": rule.category,
-            "match_count": rule.match_count,
-            "false_positive_count": rule.false_positive_count,
-            "accuracy": (
-                (rule.match_count - rule.false_positive_count) / rule.match_count * 100
-                if rule.match_count > 0 else 0
-            )
-        })
-    
-    # 按命中次数排序
-    effectiveness.sort(key=lambda x: x['match_count'], reverse=True)
-    
-    return effectiveness[:20]
-
-
-@router.get("/timeline")
-async def get_detection_timeline(days: int = 7, db: Session = Depends(get_db)):
-    """获取检测时间线"""
-    
-    start_date = datetime.now() - timedelta(days=days)
-    
-    # 按日期分组统计
-    results = db.query(
-        func.date(ScanResult.scanned_at).label('date'),
-        func.count(ScanResult.id).label('total'),
-        func.sum(func.cast(ScanResult.is_malicious, Integer)).label('malicious')
-    ).filter(
-        ScanResult.scanned_at >= start_date
-    ).group_by(
-        func.date(ScanResult.scanned_at)
-    ).all()
-    
-    timeline = []
-    for r in results:
-        timeline.append({
-            "date": r.date.isoformat() if r.date else None,
-            "total_scans": r.total,
-            "malicious_detections": r.malicious or 0,
-            "clean_files": r.total - (r.malicious or 0)
-        })
-    
-    return timeline
-
-
-@router.get("/export/{task_id}")
-async def export_report(task_id: str, db: Session = Depends(get_db)):
-    """导出扫描报告"""
-    
-    task = db.query(ScanTask).filter(ScanTask.task_id == task_id).first()
-    if not task:
-        raise HTTPException(status_code=404, detail="任务未找到")
-    
-    results = db.query(ScanResult).filter(ScanResult.task_id == task.id).all()
-    
-    report = {
-        "task_info": {
-            "task_id": task.task_id,
-            "target_path": task.target_path,
-            "scan_type": task.scan_type,
-            "status": task.status,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None
-        },
-        "statistics": {
-            "total_files": task.total_files,
-            "scanned_files": task.scanned_files,
-            "detected_files": task.detected_files,
-            "clean_files": task.scanned_files - task.detected_files
-        },
-        "results": [{
-            "file_path": r.file_path,
-            "file_name": r.file_name,
-            "file_hash": r.file_hash,
-            "threat_level": r.threat_level,
-            "is_malicious": r.is_malicious,
-            "matched_rules": r.matched_rules,
-            "scanned_at": r.scanned_at.isoformat() if r.scanned_at else None
-        } for r in results]
-    }
-    
-    return report
+@router.get("/{scan_id}")
+async def get_scan_report(scan_id: int, db: Session = Depends(get_db)):
+    """获取单个扫描报告详情"""
+    try:
+        scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        if not scan:
+            raise HTTPException(status_code=404, detail="扫描记录未找到")
+        
+        # 解析result JSON
+        result_data = json.loads(scan.result) if scan.result else {}
+        is_malicious = result_data.get("is_malicious", False)
+        matches = result_data.get("matches", [])
+        
+        # 获取样本hash (如果存在)
+        sample_hash = result_data.get("sample_hash", "N/A")
+        
+        # 获取所有规则用于计算
+        active_rules = db.query(Rule).filter(Rule.active == True).all()
+        total_rules = len(active_rules)
+        
+        return {
+            "id": scan.id,
+            "filename": scan.filename,
+            "sample_hash": sample_hash,
+            "scan_time": scan.started_at,
+            "is_malicious": is_malicious,
+            "total_rules": total_rules,
+            "scanned_rules": total_rules,  # 假设所有激活规则都被使用
+            "match_count": len(matches),
+            "matches": matches,
+            "status": scan.status
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error in get_scan_report: {e}")
+        raise HTTPException(status_code=500, detail="获取扫描报告失败")

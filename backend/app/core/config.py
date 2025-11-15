@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     ]
     
     # 数据库
-    DATABASE_URL: str = "sqlite:///./yara_manager.db"
+    DATABASE_URL: str = "sqlite:///./data.sqlite"
     # DATABASE_URL: str = "postgresql://user:password@localhost/yara_db"
     
     # Redis (任务队列)

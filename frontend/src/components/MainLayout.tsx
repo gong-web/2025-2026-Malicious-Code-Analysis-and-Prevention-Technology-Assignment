@@ -31,12 +31,12 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     {
       key: '/rules',
       icon: <FileTextOutlined />,
-      label: 'YARA 规则',
+      label: 'YARA规则',
     },
     {
       key: '/scan',
       icon: <ScanOutlined />,
-      label: '扫描任务',
+      label: '样本扫描',
     },
     {
       key: '/reports',
