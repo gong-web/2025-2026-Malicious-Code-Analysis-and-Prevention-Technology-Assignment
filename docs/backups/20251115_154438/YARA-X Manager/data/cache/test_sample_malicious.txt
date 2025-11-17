@@ -1,0 +1,5 @@
+This is a test file containing the word malware for testing purposes.
+
+The file is designed to trigger YARA rules during scanning tests.
+
+Keywords: virus, trojan, test

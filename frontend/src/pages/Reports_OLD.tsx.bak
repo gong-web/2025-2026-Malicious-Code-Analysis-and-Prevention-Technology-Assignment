@@ -1,0 +1,170 @@
+import React, { useEffect, useState } from 'react'
+import { Card, Row, Col, Spin, message, Empty } from 'antd'
+import { 
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from 'recharts'
+import api from '../services/api'
+
+interface TrendData {
+  date: string
+  total: number
+  malicious: number
+  clean: number
+}
+
+interface RuleEffectiveness {
+  name: string
+  matches: number
+}
+
+interface StatsData {
+  total_scans: number
+  malicious_count: number
+  clean_count: number
+}
+
+const Reports: React.FC = () => {
+  const [loading, setLoading] = useState(false)
+  const [trendData, setTrendData] = useState<TrendData[]>([])
+  const [ruleData, setRuleData] = useState<RuleEffectiveness[]>([])
+  const [statsData, setStatsData] = useState<StatsData | null>(null)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [trend, rules, stats] = await Promise.all([
+        api.get('/api/reports/trend?days=7').then(res => res.data),
+        api.get('/api/reports/rule-effectiveness').then(res => res.data),
+        api.get('/api/reports/stats').then(res => res.data)
+      ])
+      setTrendData(trend)
+      setRuleData(rules)
+      setStatsData(stats)
+    } catch (error: any) {
+      message.error('加载统计数据失败')
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const COLORS = ['#52c41a', '#ff4d4f', '#faad14', '#1890ff', '#722ed1']
+
+  const pieData = statsData ? [
+    { name: '检测到威胁', value: statsData.malicious_count },
+    { name: '未发现威胁', value: statsData.clean_count }
+  ] : []
+
+  return (
+    <div>
+      <h2>检测报告与统计</h2>
+      
+      <Spin spinning={loading}>
+        <Row gutter={[16, 16]}>
+          {/* 扫描趋势图 */}
+          <Col span={24}>
+            <Card title="📈 扫描趋势（最近7天）">
+              {trendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={trendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="total" 
+                      stroke="#1890ff" 
+                      name="总扫描数"
+                      strokeWidth={2}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="malicious" 
+                      stroke="#ff4d4f" 
+                      name="检测到威胁"
+                      strokeWidth={2}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="clean" 
+                      stroke="#52c41a" 
+                      name="未发现威胁"
+                      strokeWidth={2}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty description="暂无趋势数据" />
+              )}
+            </Card>
+          </Col>
+
+          {/* 威胁类型分布 */}
+          <Col xs={24} lg={12}>
+            <Card title="🛡️ 检测结果分布">
+              {pieData.length > 0 && (pieData[0].value > 0 || pieData[1].value > 0) ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={(entry) => `${entry.name}: ${entry.value}`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={index === 0 ? '#ff4d4f' : '#52c41a'} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty description="暂无检测数据" />
+              )}
+            </Card>
+          </Col>
+
+          {/* 规则有效性分析 */}
+          <Col xs={24} lg={12}>
+            <Card title="📊 规则有效性排行（Top 10）">
+              {ruleData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={ruleData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={100}
+                      interval={0}
+                    />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="matches" fill="#1890ff" name="匹配次数" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty description="暂无规则统计数据" />
+              )}
+            </Card>
+          </Col>
+        </Row>
+      </Spin>
+    </div>
+  )
+}
+
+export default Reports

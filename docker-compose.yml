@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # Redis服务 - 用于Celery任务队列
+  redis:
+    image: redis:7-alpine
+    container_name: yara-manager-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # YARA-X Manager 后端服务
+  backend:
+    build:
+      context: ./YARA-X Manager
+      dockerfile: Dockerfile
+    container_name: yara-manager-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./YARA-X Manager:/app
+      - ./db:/db
+      - yara_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker - 处理后台任务
+  celery-worker:
+    build:
+      context: ./YARA-X Manager
+      dockerfile: Dockerfile
+    container_name: yara-manager-celery
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./YARA-X Manager:/app
+      - ./db:/db
+      - yara_data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app worker --loglevel=info
+
+  # 前端服务
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: yara-manager-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  redis_data:
+  yara_data:
