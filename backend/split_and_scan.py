@@ -5,7 +5,7 @@ import math
 import subprocess
 from pathlib import Path
 
-def split_and_scan(source_dir, batch_size=700):
+def split_and_scan(source_dir, batch_size=650):
     source_path = Path(source_dir).resolve()
     parent_dir = source_path.parent
     base_name = source_path.name
