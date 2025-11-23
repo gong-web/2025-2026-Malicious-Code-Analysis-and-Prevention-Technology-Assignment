@@ -7,7 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import rules, scan, reports, auth
+from app.api import rules, scan, reports, auth, sigma_rules
 
 app = FastAPI(
     title="YARA-X Manager API",
@@ -29,6 +29,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(rules.router, prefix="/api/rules", tags=["YARA 规则"])
+app.include_router(sigma_rules.router, prefix="/api/sigma-rules", tags=["Sigma 规则"])
 app.include_router(scan.router, prefix="/api/scan", tags=["扫描任务"])
 app.include_router(reports.router, prefix="/api/reports", tags=["检测报告"])
 
@@ -50,9 +51,18 @@ async def health_check():
 
 
 if __name__ == "__main__":
+    import logging
+    
+    # 设置日志级别为 INFO，避免 DEBUG 级别的详细日志
+    logging.basicConfig(level=logging.INFO)
+    
+    # 禁用 multipart 模块的 DEBUG 日志
+    logging.getLogger("multipart.multipart").setLevel(logging.WARNING)
+    
     uvicorn.run(
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.DEBUG
+        reload=False,
+        log_level="info"  # 修改为 info 级别
     )

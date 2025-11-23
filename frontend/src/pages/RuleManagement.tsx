@@ -1,28 +1,46 @@
 import React, { useEffect, useState } from 'react'
-import { Table, Button, Modal, Form, Input, Select, message, Upload, Space, Tag } from 'antd'
+import { Table, Button, Modal, Form, Input, Select, message, Upload, Space, Tag, Tabs } from 'antd'
 import { PlusOutlined, UploadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import axios from 'axios'
 
 const { TextArea } = Input
+const { TabPane } = Tabs
 
 const RuleManagement: React.FC = () => {
-  const [rules, setRules] = useState<any[]>([])
+  const [yaraRules, setYaraRules] = useState<any[]>([])
+  const [sigmaRules, setSigmaRules] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [editingRule, setEditingRule] = useState<any>(null)
+  const [activeTab, setActiveTab] = useState<string>('yara')
   const [form] = Form.useForm()
 
   useEffect(() => {
-    loadRules()
+    loadYaraRules()
+    loadSigmaRules()
   }, [])
 
-  const loadRules = async () => {
+  const loadYaraRules = async () => {
     setLoading(true)
     try {
-      const response = await axios.get('/api/rules/')
-      setRules(response.data)
+      const response = await axios.get('/api/rules/?limit=10000')
+      setYaraRules(response.data)
     } catch (error) {
-      message.error('加载规则失败')
+      message.error('加载YARA规则失败')
+      console.error('YARA规则加载错误:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadSigmaRules = async () => {
+    setLoading(true)
+    try {
+      const response = await axios.get('/api/sigma-rules/?limit=10000')
+      setSigmaRules(response.data)
+    } catch (error) {
+      console.error('Sigma规则加载错误:', error)
+      // Sigma规则暂时不可用时不显示错误
     } finally {
       setLoading(false)
     }
@@ -42,9 +60,14 @@ const RuleManagement: React.FC = () => {
 
   const handleDelete = async (id: number) => {
     try {
-      await axios.delete(`/api/rules/${id}`)
+      const endpoint = activeTab === 'yara' ? '/api/rules/' : '/api/sigma-rules/'
+      await axios.delete(`${endpoint}${id}`)
       message.success('删除成功')
-      loadRules()
+      if (activeTab === 'yara') {
+        loadYaraRules()
+      } else {
+        loadSigmaRules()
+      }
     } catch (error) {
       message.error('删除失败')
     }
@@ -52,15 +75,20 @@ const RuleManagement: React.FC = () => {
 
   const handleSubmit = async (values: any) => {
     try {
+      const endpoint = activeTab === 'yara' ? '/api/rules/' : '/api/sigma-rules/'
       if (editingRule) {
-        await axios.put(`/api/rules/${editingRule.id}`, values)
+        await axios.put(`${endpoint}${editingRule.id}`, values)
         message.success('更新成功')
       } else {
-        await axios.post('/api/rules/', values)
+        await axios.post(endpoint, values)
         message.success('创建成功')
       }
       setModalVisible(false)
-      loadRules()
+      if (activeTab === 'yara') {
+        loadYaraRules()
+      } else {
+        loadSigmaRules()
+      }
     } catch (error: any) {
       message.error(error.response?.data?.detail || '操作失败')
     }
@@ -71,9 +99,14 @@ const RuleManagement: React.FC = () => {
     formData.append('file', file)
 
     try {
-      await axios.post('/api/rules/upload', formData)
+      const endpoint = activeTab === 'yara' ? '/api/rules/upload' : '/api/sigma-rules/upload'
+      await axios.post(endpoint, formData)
       message.success('上传成功')
-      loadRules()
+      if (activeTab === 'yara') {
+        loadYaraRules()
+      } else {
+        loadSigmaRules()
+      }
     } catch (error: any) {
       message.error(error.response?.data?.detail || '上传失败')
     }
@@ -81,7 +114,7 @@ const RuleManagement: React.FC = () => {
     return false
   }
 
-  const columns = [
+  const yaraColumns = [
     {
       title: 'ID',
       dataIndex: 'id',
@@ -161,10 +194,83 @@ const RuleManagement: React.FC = () => {
     },
   ]
 
+  const sigmaColumns = [
+    {
+      title: 'ID',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
+    },
+    {
+      title: '规则名称',
+      dataIndex: 'title',
+      key: 'title',
+    },
+    {
+      title: '描述',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+    {
+      title: '级别',
+      dataIndex: 'level',
+      key: 'level',
+      render: (level: string) => {
+        const colors: any = {
+          informational: 'blue',
+          low: 'green',
+          medium: 'orange',
+          high: 'red',
+          critical: 'purple'
+        }
+        return <Tag color={colors[level]}>{level}</Tag>
+      }
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => {
+        const colors: any = {
+          stable: 'green',
+          test: 'orange',
+          experimental: 'blue'
+        }
+        return <Tag color={colors[status]}>{status}</Tag>
+      }
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: any) => (
+        <Space>
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record)}
+          >
+            编辑
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record.id)}
+          >
+            删除
+          </Button>
+        </Space>
+      ),
+    },
+  ]
+
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <h2>YARA 规则管理</h2>
+        <h2>规则管理</h2>
         <Space>
           <Upload beforeUpload={handleUpload} showUploadList={false}>
             <Button icon={<UploadOutlined />}>上传规则文件</Button>
@@ -175,13 +281,26 @@ const RuleManagement: React.FC = () => {
         </Space>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={rules}
-        loading={loading}
-        rowKey="id"
-        pagination={{ pageSize: 10 }}
-      />
+      <Tabs activeKey={activeTab} onChange={setActiveTab}>
+        <TabPane tab={`YARA规则 (${yaraRules.length})`} key="yara">
+          <Table
+            columns={yaraColumns}
+            dataSource={yaraRules}
+            loading={loading}
+            rowKey="id"
+            pagination={{ pageSize: 50, showTotal: (total) => `共 ${total} 条规则` }}
+          />
+        </TabPane>
+        <TabPane tab={`Sigma规则 (${sigmaRules.length})`} key="sigma">
+          <Table
+            columns={sigmaColumns}
+            dataSource={sigmaRules}
+            loading={loading}
+            rowKey="id"
+            pagination={{ pageSize: 50, showTotal: (total) => `共 ${total} 条规则` }}
+          />
+        </TabPane>
+      </Tabs>
 
       <Modal
         title={editingRule ? '编辑规则' : '新建规则'}
@@ -208,7 +327,7 @@ const RuleManagement: React.FC = () => {
             label="规则内容"
             rules={[{ required: true, message: '请输入规则内容' }]}
           >
-            <TextArea rows={10} placeholder="输入 YARA 规则..." />
+            <TextArea rows={10} placeholder={activeTab === 'yara' ? '输入 YARA 规则...' : '输入 Sigma 规则 (YAML格式)...'} />
           </Form.Item>
 
           <Form.Item name="category" label="分类">

@@ -5,9 +5,10 @@ YARA 规则管理 API
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
 from app.core.database import get_db
 from app.models.rule import YaraRule, RuleStatus, RuleSeverity
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_serializer
 import yara
 
 router = APIRouter()
@@ -37,14 +38,18 @@ class RuleUpdate(BaseModel):
 class RuleResponse(BaseModel):
     id: int
     name: str
-    description: Optional[str]
-    category: Optional[str]
+    description: Optional[str] = None
+    category: Optional[str] = None
     severity: RuleSeverity
     status: RuleStatus
-    author: Optional[str]
-    version: Optional[str]
+    author: Optional[str] = None
+    version: Optional[str] = None
     match_count: int
-    created_at: str
+    created_at: datetime
+    
+    @field_serializer('created_at')
+    def serialize_datetime(self, dt: datetime, _info):
+        return dt.isoformat() if dt else None
     
     class Config:
         from_attributes = True
@@ -53,7 +58,7 @@ class RuleResponse(BaseModel):
 @router.get("/", response_model=List[RuleResponse])
 async def list_rules(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 10000,
     category: Optional[str] = None,
     status: Optional[RuleStatus] = None,
     db: Session = Depends(get_db)

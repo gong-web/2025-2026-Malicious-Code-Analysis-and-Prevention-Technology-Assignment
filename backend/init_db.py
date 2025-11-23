@@ -10,6 +10,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import init_db
+from app.models.rule import YaraRule
+from app.models.scan import ScanTask, ScanResult
 
 if __name__ == "__main__":
     print("正在初始化数据库...")

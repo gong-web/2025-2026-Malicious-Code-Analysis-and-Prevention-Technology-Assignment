@@ -13,6 +13,9 @@ asyncpg==0.29.0
 # YARA
 yara-python==4.5.0
 
+# YAML Parser
+PyYAML==6.0.1
+
 # Security
 python-multipart==0.0.6
 python-jose[cryptography]==3.3.0
