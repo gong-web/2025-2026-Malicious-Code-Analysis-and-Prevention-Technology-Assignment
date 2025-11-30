@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Table, Button, Upload, message, Tag, Space, Modal, Progress, Card, Statistic, Row, Col, Badge, Divider, List, Typography } from 'antd'
-import { UploadOutlined, ScanOutlined, DeleteOutlined, EyeOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, FileOutlined } from '@ant-design/icons'
+import { Table, Button, Upload, message, Tag, Space, Modal, Progress, Card, Statistic, Row, Col, Badge, Divider, List, Typography, Switch, Tooltip } from 'antd'
+import { UploadOutlined, ScanOutlined, DeleteOutlined, EyeOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, FileOutlined, RocketOutlined } from '@ant-design/icons'
 import type { UploadFile, UploadProps } from 'antd'
 import axios from 'axios'
 
@@ -13,6 +13,7 @@ interface UploadingFile {
   status: 'uploading' | 'done' | 'error'
   progress: number
   result?: any
+  mode?: 'static' | 'dynamic'
 }
 
 const ScanManagement: React.FC = () => {
@@ -20,8 +21,10 @@ const ScanManagement: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [resultsVisible, setResultsVisible] = useState(false)
   const [currentResults, setCurrentResults] = useState<any[]>([])
+  const [currentDynamicResult, setCurrentDynamicResult] = useState<any>(null)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const [fileList, setFileList] = useState<UploadFile[]>([])
+  const [useDynamicAnalysis, setUseDynamicAnalysis] = useState(false)
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
@@ -63,7 +66,8 @@ const ScanManagement: React.FC = () => {
       uid: fileId,
       name: file.name,
       status: 'uploading',
-      progress: 0
+      progress: 0,
+      mode: useDynamicAnalysis ? 'dynamic' : 'static'
     }
     setUploadingFiles(prev => [...prev, newFile])
 
@@ -76,27 +80,48 @@ const ScanManagement: React.FC = () => {
         setUploadingFiles(prev => 
           prev.map(f => 
             f.uid === fileId && f.progress < 90 
-              ? { ...f, progress: f.progress + 10 } 
+              ? { ...f, progress: f.progress + 5 } 
               : f
           )
         )
       }, 200)
 
-      const response = await axios.post('/api/scan/file', formData, {
+      const endpoint = useDynamicAnalysis ? '/api/sigma-scan/dynamic' : '/api/scan/file'
+      // For dynamic scan, we default to sandbox=true (safe mode)
+      const url = useDynamicAnalysis ? `${endpoint}?sandbox=true&duration=5` : endpoint
+
+      const response = await axios.post(url, formData, {
         onUploadProgress: (progressEvent) => {
           const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1))
           setUploadingFiles(prev => 
             prev.map(f => 
               f.uid === fileId 
-                ? { ...f, progress: Math.min(percentCompleted, 90) } 
+                ? { ...f, progress: Math.min(percentCompleted, 80) } 
                 : f
             )
           )
-        }
+        },
+        timeout: 60000 // 60s timeout for dynamic scan
       })
 
       clearInterval(progressInterval)
       
+      // 结果处理适配
+      let isMalicious = false;
+      let matchCount = 0;
+      
+      if (useDynamicAnalysis) {
+          // Dynamic Scan Result Structure
+          // { matches_count: n, matches: [...], ... }
+          matchCount = response.data.matches_count;
+          isMalicious = matchCount > 0;
+      } else {
+          // Static Scan Result Structure
+          // { is_malicious: bool, matched_rules: [...], ... }
+          isMalicious = response.data.is_malicious;
+          matchCount = response.data.matched_rules?.length || 0;
+      }
+
       // 更新为完成状态
       setUploadingFiles(prev => 
         prev.map(f => 
@@ -107,16 +132,18 @@ const ScanManagement: React.FC = () => {
       )
       
       message.success({
-        content: `${file.name}: ${response.data.is_malicious ? '⚠️ 检测到威胁!' : '✅ 文件安全'}`,
+        content: `${file.name}: ${isMalicious ? '⚠️ 检测到威胁!' : '✅ 文件安全'}`,
         duration: 3
       })
       
-      loadTasks()
+      if (!useDynamicAnalysis) {
+          loadTasks()
+      }
       
       // 3秒后移除已完成的文件
       setTimeout(() => {
         setUploadingFiles(prev => prev.filter(f => f.uid !== fileId))
-      }, 3000)
+      }, 5000)
     } catch (error: any) {
       setUploadingFiles(prev => 
         prev.map(f => 
@@ -149,17 +176,25 @@ const ScanManagement: React.FC = () => {
       setFileList(info.fileList)
     },
     showUploadList: false,
-    accept: '.exe,.dll,.bin,.pdf,.doc,.docx,.zip,.rar',
+    accept: '.exe,.dll,.bin,.pdf,.doc,.docx,.zip,.rar,.bat,.ps1,.cmd',
   }
 
   const handleViewResults = async (taskId: string) => {
     try {
       const response = await axios.get(`/api/scan/${taskId}/results`)
       setCurrentResults(response.data)
+      setCurrentDynamicResult(null)
       setResultsVisible(true)
     } catch (error) {
       message.error('加载结果失败')
     }
+  }
+  
+  // Show dynamic results from the upload list immediately
+  const handleViewDynamicResult = (result: any) => {
+      setCurrentResults([])
+      setCurrentDynamicResult(result)
+      setResultsVisible(true)
   }
 
   const handleDelete = async (taskId: string) => {
@@ -345,26 +380,52 @@ const ScanManagement: React.FC = () => {
             <span>文件上传扫描</span>
           </Space>
         }
+        extra={
+            <Space>
+                <Text>启用动态行为分析 (Sigma)</Text>
+                <Switch 
+                    checkedChildren={<RocketOutlined />} 
+                    unCheckedChildren={<ScanOutlined />}
+                    checked={useDynamicAnalysis}
+                    onChange={setUseDynamicAnalysis} 
+                />
+                <Tooltip title="动态分析会模拟运行程序（沙箱模式），检测其行为日志是否命中 Sigma 规则。这比静态扫描更深入，但耗时较长。">
+                    <Button type="text" shape="circle" icon={<InboxOutlined />} size="small" />
+                </Tooltip>
+            </Space>
+        }
         style={{ marginBottom: 24 }}
       >
         <Dragger {...uploadProps}>
           <p className="ant-upload-drag-icon">
-            <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+            {useDynamicAnalysis ? (
+                <RocketOutlined style={{ fontSize: 48, color: '#faad14' }} />
+            ) : (
+                <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+            )}
           </p>
-          <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
+          <p className="ant-upload-text">
+              {useDynamicAnalysis ? '点击或拖拽可执行文件进行【动态行为分析】' : '点击或拖拽文件进行【静态特征扫描】'}
+          </p>
           <p className="ant-upload-hint">
-            支持单个或批量上传。支持格式: .exe, .dll, .bin, .pdf, .doc, .docx, .zip, .rar
+            {useDynamicAnalysis 
+                ? '支持 .exe, .bat, .ps1 等可执行文件。系统将在安全沙箱中模拟运行并分析行为。' 
+                : '支持单个或批量上传。支持格式: .exe, .dll, .bin, .pdf, .doc, .docx, .zip, .rar'}
           </p>
         </Dragger>
 
         {/* 上传进度列表 */}
         {uploadingFiles.length > 0 && (
           <>
-            <Divider orientation="left">上传进度</Divider>
+            <Divider orientation="left">处理进度</Divider>
             <List
               dataSource={uploadingFiles}
               renderItem={(file) => (
-                <List.Item>
+                <List.Item
+                    actions={file.status === 'done' && file.result && file.mode === 'dynamic' ? [
+                        <Button type="link" onClick={() => handleViewDynamicResult(file.result)}>查看详情</Button>
+                    ] : []}
+                >
                   <List.Item.Meta
                     avatar={
                       file.status === 'uploading' ? (
@@ -379,9 +440,20 @@ const ScanManagement: React.FC = () => {
                       <Space>
                         <Text strong>{file.name}</Text>
                         {file.status === 'done' && file.result && (
-                          <Tag color={file.result.is_malicious ? 'red' : 'green'}>
-                            {file.result.is_malicious ? '检测到威胁' : '安全'}
-                          </Tag>
+                          <>
+                            <Tag color={file.mode === 'dynamic' ? 'purple' : 'blue'}>
+                                {file.mode === 'dynamic' ? '动态分析' : '静态扫描'}
+                            </Tag>
+                            {file.mode === 'dynamic' ? (
+                                <Tag color={file.result.matches_count > 0 ? 'red' : 'green'}>
+                                    {file.result.matches_count > 0 ? `发现 ${file.result.matches_count} 个威胁行为` : '未发现异常行为'}
+                                </Tag>
+                            ) : (
+                                <Tag color={file.result.is_malicious ? 'red' : 'green'}>
+                                    {file.result.is_malicious ? '检测到静态特征' : '静态特征安全'}
+                                </Tag>
+                            )}
+                          </>
                         )}
                       </Space>
                     }
@@ -396,11 +468,6 @@ const ScanManagement: React.FC = () => {
                           }
                           size="small"
                         />
-                        {file.status === 'done' && file.result && (
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            匹配规则: {file.result.matched_rules?.length || 0} 个
-                          </Text>
-                        )}
                       </div>
                     }
                   />
@@ -411,11 +478,11 @@ const ScanManagement: React.FC = () => {
         )}
       </Card>
 
-      {/* 任务列表 */}
+      {/* 任务列表 (仅静态扫描) */}
       <Card title={
         <Space>
           <ScanOutlined />
-          <span>扫描任务列表</span>
+          <span>静态扫描任务历史</span>
           <Badge count={tasks.length} showZero style={{ backgroundColor: '#1890ff' }} />
         </Space>
       }>
@@ -434,7 +501,7 @@ const ScanManagement: React.FC = () => {
         title={
           <Space>
             <EyeOutlined />
-            <span>扫描结果详情</span>
+            <span>{currentDynamicResult ? '动态行为分析报告' : '静态扫描结果详情'}</span>
           </Space>
         }
         open={resultsVisible}
@@ -442,13 +509,52 @@ const ScanManagement: React.FC = () => {
         footer={null}
         width={1000}
       >
-        <Table
-          columns={resultColumns}
-          dataSource={currentResults}
-          rowKey="id"
-          pagination={false}
-          size="small"
-        />
+        {currentDynamicResult ? (
+            <div>
+                <div style={{marginBottom: 16}}>
+                    <Space size="large">
+                        <Statistic title="分析文件" value={currentDynamicResult.filename} valueStyle={{fontSize: 16}} />
+                        <Statistic title="捕获事件数" value={currentDynamicResult.total_events} />
+                        <Statistic title="命中规则数" value={currentDynamicResult.matches_count} valueStyle={{color: currentDynamicResult.matches_count > 0 ? '#cf1322' : '#3f8600'}} />
+                    </Space>
+                </div>
+                <Divider orientation="left">命中 Sigma 规则</Divider>
+                <Table
+                    dataSource={currentDynamicResult.matches}
+                    rowKey={(r: any) => r.rule_id + r.title}
+                    pagination={false}
+                    columns={[
+                        {title: '规则名称', dataIndex: 'title', key: 'title', render: (t) => <Text strong>{t}</Text>},
+                        {title: '级别', dataIndex: 'level', key: 'level', render: (l) => <Tag color={l === 'high' || l === 'critical' ? 'red' : 'orange'}>{l}</Tag>},
+                        {title: '标签', dataIndex: 'tags', key: 'tags', render: (tags) => tags?.map((t:string) => <Tag key={t}>{t}</Tag>)},
+                    ]}
+                />
+                
+                {currentDynamicResult.captured_events_preview && (
+                    <>
+                        <Divider orientation="left">行为日志预览 (Top 5)</Divider>
+                        <List
+                            size="small"
+                            bordered
+                            dataSource={currentDynamicResult.captured_events_preview}
+                            renderItem={(item: any) => (
+                                <List.Item>
+                                    <Text code style={{width: '100%'}}>{JSON.stringify(item)}</Text>
+                                </List.Item>
+                            )}
+                        />
+                    </>
+                )}
+            </div>
+        ) : (
+            <Table
+              columns={resultColumns}
+              dataSource={currentResults}
+              rowKey="id"
+              pagination={false}
+              size="small"
+            />
+        )}
       </Modal>
     </div>
   )

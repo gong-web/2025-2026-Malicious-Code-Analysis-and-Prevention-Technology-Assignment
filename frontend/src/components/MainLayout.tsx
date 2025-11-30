@@ -26,22 +26,22 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     {
       key: '/dashboard',
       icon: <DashboardOutlined />,
-      label: '仪表盘',
+      label: '系统概览',
     },
     {
       key: '/rules',
       icon: <FileTextOutlined />,
-      label: 'YARA 规则',
+      label: '规则管理库',
     },
     {
       key: '/scan',
       icon: <ScanOutlined />,
-      label: '扫描任务',
+      label: '双模扫描中心',
     },
     {
       key: '/reports',
       icon: <BarChartOutlined />,
-      label: '检测报告',
+      label: '威胁情报大屏',
     },
   ]
 
@@ -58,9 +58,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           color: 'white',
           fontSize: 20,
           fontWeight: 'bold',
-          textAlign: 'center'
+          textAlign: 'center',
+          overflow: 'hidden',
+          whiteSpace: 'nowrap'
         }}>
-          {collapsed ? 'Y-X' : 'YARA-X'}
+          {collapsed ? 'MP' : 'MCAP System'}
         </div>
         <Menu
           theme="dark"
@@ -72,7 +74,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       </Sider>
       <Layout>
         <Header style={{ padding: '0 24px', background: colorBgContainer }}>
-          <h1 style={{ margin: 0 }}>恶意代码检测与 YARA 规则管理系统</h1>
+          <h1 style={{ margin: 0, fontSize: '20px' }}>恶意代码分析与双引擎防护系统 (YARA + Sigma)</h1>
         </Header>
         <Content style={{ margin: '24px 16px', padding: 24, minHeight: 280 }}>
           {children}

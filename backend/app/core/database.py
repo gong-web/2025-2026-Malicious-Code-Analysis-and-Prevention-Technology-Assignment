@@ -8,9 +8,28 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
 # 创建数据库引擎
+connect_args = {}
+engine_args = {}
+
+if "sqlite" in settings.DATABASE_URL:
+    # SQLite Optimization
+    connect_args = {
+        "check_same_thread": False,
+        "timeout": 30  # Increase timeout to prevent lock errors
+    }
+else:
+    # PostgreSQL/MySQL Optimization (Connection Pooling)
+    engine_args = {
+        "pool_size": 20,        # Base number of connections
+        "max_overflow": 40,     # Max extra connections allowed
+        "pool_timeout": 60,     # Wait time before giving up
+        "pool_recycle": 1800    # Recycle connections every 30 min
+    }
+
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    connect_args=connect_args,
+    **engine_args
 )
 
 # 创建会话

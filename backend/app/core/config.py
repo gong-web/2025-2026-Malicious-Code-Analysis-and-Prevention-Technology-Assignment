@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:8000",
+        "http://localhost:5173",
+        "http://localhost:5174", # Vite default
+        "http://127.0.0.1:5174"
     ]
     
     # 数据库
@@ -49,7 +52,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 500 * 1024 * 1024  # 500MB
     
     class Config:
-        env_file = ".env"
+        # env_file = ".env" # Disable .env loading to prevent Pydantic parsing errors
         case_sensitive = True
 
 

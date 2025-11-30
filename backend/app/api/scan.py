@@ -2,10 +2,10 @@
 扫描任务 API
 """
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.models.scan import ScanTask, ScanResult, ScanStatus, ThreatLevel
 from app.models.rule import YaraRule
 from pydantic import BaseModel
@@ -14,12 +14,20 @@ import yara
 import hashlib
 import os
 from datetime import datetime
+import traceback
+import concurrent.futures
+import threading
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # 全局缓存编译后的规则
 _compiled_rules_cache = None
 _rules_cache_timestamp = None
+COMPILED_RULES_PATH = "compiled_rules.yarc"
+
 
 
 # Pydantic 模型
@@ -38,7 +46,7 @@ class ScanResponse(BaseModel):
     total_files: int
     scanned_files: int
     detected_files: int
-    created_at: str
+    created_at: datetime
     
     class Config:
         from_attributes = True
@@ -58,17 +66,32 @@ class ScanResultResponse(BaseModel):
 
 
 def get_compiled_rules(db: Session, force_reload: bool = False):
-    """获取编译后的规则（带缓存）"""
+    """获取编译后的规则（带缓存和持久化）"""
     global _compiled_rules_cache, _rules_cache_timestamp
     
     current_time = datetime.now()
     
-    # 如果缓存存在且未过期（5分钟内），直接返回
+    # 1. 内存缓存检查
     if not force_reload and _compiled_rules_cache and _rules_cache_timestamp:
         cache_age = (current_time - _rules_cache_timestamp).total_seconds()
         if cache_age < 300:  # 5分钟缓存
             return _compiled_rules_cache
+
+    # 2. 磁盘缓存检查 (如果内存中没有或强制刷新)
+    if not force_reload and os.path.exists(COMPILED_RULES_PATH):
+        try:
+            # 尝试加载预编译的规则文件
+            logger.info(f"Loading compiled rules from {COMPILED_RULES_PATH}...")
+            compiled_rules = yara.load(COMPILED_RULES_PATH)
+            _compiled_rules_cache = compiled_rules
+            _rules_cache_timestamp = current_time
+            return compiled_rules
+        except Exception as e:
+            logger.error(f"Failed to load compiled rules: {e}")
+            # 加载失败则继续执行编译逻辑
     
+    # 3. 从数据库加载并编译
+    logger.info("Compiling rules from database...")
     # 获取所有活动的 YARA 规则
     rules = db.query(YaraRule).limit(10000).all()
     
@@ -89,6 +112,14 @@ def get_compiled_rules(db: Session, force_reload: bool = False):
     
     try:
         compiled_rules = yara.compile(sources=rule_dict)
+        
+        # 4. 保存到磁盘
+        try:
+            compiled_rules.save(COMPILED_RULES_PATH)
+            logger.info(f"Saved compiled rules to {COMPILED_RULES_PATH}")
+        except Exception as e:
+            logger.warning(f"Failed to save compiled rules: {e}")
+
         _compiled_rules_cache = compiled_rules
         _rules_cache_timestamp = current_time
         return compiled_rules
@@ -96,8 +127,163 @@ def get_compiled_rules(db: Session, force_reload: bool = False):
         raise HTTPException(status_code=500, detail=f"规则编译失败: {str(e)}")
 
 
+def run_scan_task(task_id: str):
+    """后台执行扫描任务"""
+    logger.info(f"Starting background scan task: {task_id}")
+    db = SessionLocal()
+    try:
+        task = db.query(ScanTask).filter(ScanTask.task_id == task_id).first()
+        if not task:
+            logger.error(f"Task {task_id} not found in background worker")
+            return
+
+        task.status = ScanStatus.RUNNING
+        task.started_at = datetime.now()
+        db.commit()
+
+        try:
+            compiled_rules = get_compiled_rules(db)
+        except Exception as e:
+            logger.error(f"Failed to load rules for task {task_id}: {e}")
+            task.status = ScanStatus.FAILED
+            db.commit()
+            return
+
+        target_path = task.target_path
+        
+        # 收集所有文件路径
+        file_paths = []
+        if os.path.isfile(target_path):
+            file_paths.append(target_path)
+        else:
+            for root, dirs, files in os.walk(target_path):
+                for file in files:
+                    file_paths.append(os.path.join(root, file))
+        
+        total_files = len(file_paths)
+        task.total_files = total_files
+        db.commit()
+
+        scanned_count = 0
+        detected_count = 0
+        # Batch storage for results to reduce DB lock contention
+        results_buffer = []
+        BATCH_SIZE = 100
+        db_lock = threading.Lock()
+        
+        # 扫描处理函数
+        def process_file(file_path):
+            nonlocal scanned_count, detected_count
+            try:
+                # Use YARA's internal file handling for memory efficiency
+                # timeout=60 prevents hanging on massive files
+                try:
+                    matches = compiled_rules.match(filepath=file_path, timeout=60)
+                except yara.Error:
+                    # Fallback for permission errors or special files: try reading content
+                    # But limit size to avoid OOM
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        if file_size > 100 * 1024 * 1024: # Skip > 100MB if direct match fails
+                            return
+                        with open(file_path, "rb") as f:
+                            matches = compiled_rules.match(data=f.read(), timeout=60)
+                    except Exception:
+                        return
+
+                is_malicious = len(matches) > 0
+                
+                # Only record malicious files or if specifically requested (to save DB space)
+                # Recording every clean file in a full system scan is wasteful
+                # But current logic requires counting them. We will count all, but store malicious detail.
+                
+                if is_malicious:
+                    threat_level = ThreatLevel.MALICIOUS
+                    matched_rule_names = [m.rule for m in matches]
+                    
+                    # Calculate hash only for malicious files to save IO/CPU
+                    try:
+                        with open(file_path, "rb") as f:
+                            # Read in chunks for hash
+                            sha256_hash = hashlib.sha256()
+                            for byte_block in iter(lambda: f.read(4096), b""):
+                                sha256_hash.update(byte_block)
+                            file_hash = sha256_hash.hexdigest()
+                            file_size = os.path.getsize(file_path)
+                    except:
+                        file_hash = "unknown"
+                        file_size = 0
+
+                    result = ScanResult(
+                        task_id=task.id,
+                        file_path=file_path,
+                        file_name=os.path.basename(file_path),
+                        file_size=file_size,
+                        file_hash=file_hash,
+                        threat_level=threat_level,
+                        is_malicious=is_malicious,
+                        matched_rules=str(matched_rule_names)
+                    )
+                    
+                    with db_lock:
+                        results_buffer.append(result)
+                        detected_count += 1
+                
+                with db_lock:
+                    scanned_count += 1
+                    
+                    # Flush buffer if full
+                    if len(results_buffer) >= BATCH_SIZE:
+                        db.bulk_save_objects(results_buffer)
+                        db.commit()
+                        results_buffer.clear()
+                        
+                        # Update task progress
+                        task.scanned_files = scanned_count
+                        task.detected_files = detected_count
+                        task.progress = (scanned_count / total_files) * 100 if total_files > 0 else 0
+                        db.commit()
+                    
+            except Exception as e:
+                logger.error(f"Error scanning {file_path}: {e}")
+
+        # 使用线程池并行扫描
+        # max_workers 可以根据 CPU 核心数调整，通常 CPU 核心数 * 2 或 * 4
+        max_workers = min(32, (os.cpu_count() or 1) * 4)
+        logger.info(f"Scanning with {max_workers} threads...")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(process_file, file_paths))
+        
+        # Final flush of results
+        if results_buffer:
+            db.bulk_save_objects(results_buffer)
+            db.commit()
+        
+        # 完成任务
+        task.status = ScanStatus.COMPLETED
+        task.completed_at = datetime.now()
+        task.scanned_files = scanned_count
+        task.detected_files = detected_count
+        task.progress = 100.0
+        db.commit()
+        logger.info(f"Task {task_id} completed successfully")
+
+    except Exception as e:
+        logger.error(f"Task {task_id} failed: {e}")
+        traceback.print_exc() # Keep this for debug in stderr, or use logger.exception
+        task.status = ScanStatus.FAILED
+        db.commit()
+    finally:
+        db.close()
+
+
 @router.post("/", response_model=ScanResponse)
-async def create_scan_task(scan: ScanCreate, db: Session = Depends(get_db)):
+async def create_scan_task(
+    scan: ScanCreate, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     """创建扫描任务"""
     
     # 验证目标路径
@@ -124,8 +310,8 @@ async def create_scan_task(scan: ScanCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_task)
     
-    # TODO: 这里应该启动后台任务进行实际扫描
-    # 可以使用 Celery 或其他任务队列
+    # 启动后台任务
+    background_tasks.add_task(run_scan_task, task_id)
     
     return db_task
 
@@ -172,7 +358,10 @@ def scan_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """扫描上传的文件"""
     
     try:
-        # 读取文件内容
+        # 读取文件内容 - 注意：这仍然在内存中，但 UploadFile 通常会溢出到磁盘临时文件
+        # 为了安全，我们限制读取大小或建议使用流式处理，但这里简单起见，我们读取
+        # 如果文件很大，UploadFile.file 是一个 SpooledTemporaryFile
+        
         content = file.file.read()
         
         # 计算文件哈希
@@ -211,6 +400,17 @@ def scan_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
         # 保存结果
         matched_rule_names = [m.rule for m in matches]
         
+        # 获取匹配详情 (Tags, Strings)
+        match_details = []
+        for m in matches:
+            match_details.append({
+                "rule": m.rule,
+                "tags": m.tags,
+                "meta": m.meta,
+                # strings output contains raw bytes, be careful converting
+                "strings": [(s[0], s[1], str(s[2])) for s in m.strings[:5]] # Limit to first 5 strings
+            })
+
         result = ScanResult(
             task_id=db_task.id,
             file_path=file.filename,
@@ -219,7 +419,7 @@ def scan_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
             file_hash=file_hash,
             threat_level=threat_level,
             is_malicious=is_malicious,
-            matched_rules=str(matched_rule_names)
+            matched_rules=str(matched_rule_names) # Keep simple string for DB column
         )
         db.add(result)
         db.commit()
@@ -230,7 +430,8 @@ def scan_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
             "file_hash": file_hash,
             "is_malicious": is_malicious,
             "threat_level": threat_level,
-            "matched_rules": matched_rule_names
+            "matched_rules": matched_rule_names,
+            "details": match_details # Return full details in API response
         }
     
     except HTTPException:
