@@ -11,10 +11,100 @@ from app.models.rule import YaraRule, RuleStatus, RuleSeverity
 from pydantic import BaseModel, Field, field_serializer
 import yara
 import os
+import re
 from pathlib import Path
 import logging
 
 router = APIRouter()
+
+def _parse_severity_from_content(content: str, rule_name: str = "") -> RuleSeverity:
+    """
+    从 YARA 规则内容中解析严重程度
+    支持字段: severity, level, threat_level, score, weight
+    同时支持基于规则名称和内容的启发式判断
+    """
+    content_lower = content.lower()
+    name_lower = rule_name.lower()
+    
+    # 1. 优先基于规则名称的启发式判断 (Heuristics) - 最准确
+    if name_lower:
+        # Low threats - 最先检查，避免被其他规则覆盖
+        if any(keyword in name_lower for keyword in ['adware', 'test', 'sample', 'demo']):
+            return RuleSeverity.LOW
+        
+        # Critical threats
+        if any(keyword in name_lower for keyword in ['ransom', 'wannacry', 'petya', 'notpetya', 'cryptolocker']):
+            return RuleSeverity.CRITICAL
+        
+        # High threats
+        if any(keyword in name_lower for keyword in [
+            'apt', 'apt1', 'apt2', 'apt3', 'backdoor', 'trojan', 'rat', 
+            'malware', 'exploit', 'cve-', 'rootkit', 'webshell', 'shell',
+            'keylogger', 'stealer', 'infostealer', 'banker', 'botnet', 'mirai'
+        ]):
+            return RuleSeverity.HIGH
+        
+        # Medium threats
+        if any(keyword in name_lower for keyword in [
+            'hacktool', 'pua', 'suspicious', 'generic', 'downloader',
+            'dropper', 'loader', 'packer', 'obfuscated'
+        ]):
+            return RuleSeverity.MEDIUM
+    
+    # 2. 尝试解析明确的字符串等级
+    str_patterns = [
+        r'severity\s*=\s*[\'"](\w+)[\'"]',
+        r'level\s*=\s*[\'"](\w+)[\'"]',
+        r'threat_level\s*=\s*[\'"](\w+)[\'"]'
+    ]
+    
+    for pattern in str_patterns:
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            val = match.group(1).lower()
+            if "critical" in val: return RuleSeverity.CRITICAL
+            if "high" in val: return RuleSeverity.HIGH
+            if "medium" in val: return RuleSeverity.MEDIUM
+            if "low" in val: return RuleSeverity.LOW
+
+    # 3. 尝试解析分数 (常见于 Loki/Thor 规则)
+    score_match = re.search(r'score\s*=\s*(\d+)', content)
+    if score_match:
+        try:
+            score = int(score_match.group(1))
+            if score >= 80: return RuleSeverity.CRITICAL
+            if score >= 70: return RuleSeverity.HIGH
+            if score >= 40: return RuleSeverity.MEDIUM
+            return RuleSeverity.LOW
+        except:
+            pass
+
+    # 4. 尝试解析 weight (常见于反调试/反虚拟机规则)
+    weight_match = re.search(r'weight\s*=\s*(\d+)', content)
+    if weight_match:
+        try:
+            weight = int(weight_match.group(1))
+            if weight >= 8: return RuleSeverity.CRITICAL
+            if weight >= 5: return RuleSeverity.HIGH
+            if weight >= 3: return RuleSeverity.MEDIUM
+            return RuleSeverity.MEDIUM 
+        except:
+            pass
+    
+    # 5. 基于内容关键词的启发式判断
+    if content_lower:
+        # Critical indicators in content
+        if any(keyword in content_lower for keyword in ['ransom', 'encrypt', 'bitcoin', 'payment']):
+            return RuleSeverity.CRITICAL
+        
+        # High threat indicators
+        if any(keyword in content_lower for keyword in [
+            'backdoor', 'reverse shell', 'cmd.exe', 'powershell', 
+            'mimikatz', 'credential', 'password'
+        ]):
+            return RuleSeverity.HIGH
+            
+    return RuleSeverity.MEDIUM
 
 
 # Pydantic 模型
@@ -53,6 +143,14 @@ class RuleResponse(BaseModel):
     @field_serializer('created_at')
     def serialize_datetime(self, dt: datetime, _info):
         return dt.isoformat() if dt else None
+    
+    @field_serializer('severity')
+    def serialize_severity(self, severity: RuleSeverity, _info):
+        return severity.value if severity else None
+    
+    @field_serializer('status')
+    def serialize_status(self, status: RuleStatus, _info):
+        return status.value if status else None
     
     class Config:
         from_attributes = True
@@ -281,9 +379,13 @@ async def sync_local_rules(db: Session = Depends(get_db)):
                         # 查重
                         existing = db.query(YaraRule).filter(YaraRule.name == rule_name).first()
                         
+                        # 解析严重程度
+                        severity = _parse_severity_from_content(content, rule_name)
+                        
                         if existing:
                             if existing.content != content:
                                 existing.content = content
+                                existing.severity = severity
                                 existing.updated_at = datetime.now()
                                 updated_count += 1
                         else:
@@ -291,6 +393,7 @@ async def sync_local_rules(db: Session = Depends(get_db)):
                                 name=rule_name,
                                 content=content,
                                 category="imported",
+                                severity=severity,
                                 status=RuleStatus.ACTIVE,
                                 description=f"Imported from {file}"
                             )

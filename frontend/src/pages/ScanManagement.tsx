@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Table, Button, Upload, message, Tag, Space, Modal, Progress, Card, Statistic, Row, Col, Badge, Divider, List, Typography, Switch, Tooltip } from 'antd'
-import { UploadOutlined, ScanOutlined, DeleteOutlined, EyeOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, FileOutlined, RocketOutlined } from '@ant-design/icons'
+import { UploadOutlined, ScanOutlined, DeleteOutlined, EyeOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, FileOutlined, FileTextOutlined } from '@ant-design/icons'
 import type { UploadFile, UploadProps } from 'antd'
 import axios from 'axios'
 
@@ -176,7 +176,7 @@ const ScanManagement: React.FC = () => {
       setFileList(info.fileList)
     },
     showUploadList: false,
-    accept: '.exe,.dll,.bin,.pdf,.doc,.docx,.zip,.rar,.bat,.ps1,.cmd',
+    accept: useDynamicAnalysis ? '.json,.yml,.yaml,.xml,.log,.txt' : '.exe,.dll,.bin,.pdf,.doc,.docx,.zip,.rar,.bat,.ps1,.cmd',
   }
 
   const handleViewResults = async (taskId: string) => {
@@ -377,19 +377,19 @@ const ScanManagement: React.FC = () => {
         title={
           <Space>
             <UploadOutlined />
-            <span>文件上传扫描</span>
+            <span>文件检测</span>
           </Space>
         }
         extra={
             <Space>
-                <Text>启用动态行为分析 (Sigma)</Text>
+                <Text>启用 Sigma 日志分析</Text>
                 <Switch 
-                    checkedChildren={<RocketOutlined />} 
+                    checkedChildren={<FileTextOutlined />} 
                     unCheckedChildren={<ScanOutlined />}
                     checked={useDynamicAnalysis}
                     onChange={setUseDynamicAnalysis} 
                 />
-                <Tooltip title="动态分析会模拟运行程序（沙箱模式），检测其行为日志是否命中 Sigma 规则。这比静态扫描更深入，但耗时较长。">
+                <Tooltip title="上传导出的系统日志文件（如 Sysmon 日志、Windows 事件日志），利用 Sigma 规则进行离线威胁狩猎。">
                     <Button type="text" shape="circle" icon={<InboxOutlined />} size="small" />
                 </Tooltip>
             </Space>
@@ -399,17 +399,17 @@ const ScanManagement: React.FC = () => {
         <Dragger {...uploadProps}>
           <p className="ant-upload-drag-icon">
             {useDynamicAnalysis ? (
-                <RocketOutlined style={{ fontSize: 48, color: '#faad14' }} />
+                <FileTextOutlined style={{ fontSize: 48, color: '#faad14' }} />
             ) : (
                 <InboxOutlined style={{ fontSize: 48, color: '#1890ff' }} />
             )}
           </p>
           <p className="ant-upload-text">
-              {useDynamicAnalysis ? '点击或拖拽可执行文件进行【动态行为分析】' : '点击或拖拽文件进行【静态特征扫描】'}
+              {useDynamicAnalysis ? '点击或拖拽日志文件进行【Sigma 行为检测】' : '点击或拖拽文件进行【YARA 静态扫描】'}
           </p>
           <p className="ant-upload-hint">
             {useDynamicAnalysis 
-                ? '支持 .exe, .bat, .ps1 等可执行文件。系统将在安全沙箱中模拟运行并分析行为。' 
+                ? '支持 .json, .yml, .xml, .log, .txt 格式的日志文件。请上传导出的 Windows 事件日志或 Sysmon 日志。' 
                 : '支持单个或批量上传。支持格式: .exe, .dll, .bin, .pdf, .doc, .docx, .zip, .rar'}
           </p>
         </Dragger>

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     YARA_COMPILED_DIR: str = "./compiled"
     MAX_RULE_SIZE: int = 10 * 1024 * 1024  # 10MB
     
+    # Sigma 配置
+    SIGMA_COMPILED_PATH: str = "./data/sigma_rules_compiled.bin"
+    
     # 扫描配置
     SCAN_TIMEOUT: int = 300  # 5分钟
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
