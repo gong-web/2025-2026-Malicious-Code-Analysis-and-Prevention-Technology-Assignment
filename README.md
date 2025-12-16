@@ -17,6 +17,7 @@ npm run dev
 访问 http://localhost:5173
 
 ### 三、静态检测
+所有检测的样本均放在sample文件夹下，良性样本选择`sample\benign`,恶意样本选择`sample\malware`
 
 #### (1)白名单数据库构建
 
@@ -278,4 +279,5 @@ with open("suspicious.exe", "rb") as f:
 ### 五、停止服务
 
 - **后端**: 在终端中按 `Ctrl+C`
+
 - **前端**: 在终端中按 `Ctrl+C`
