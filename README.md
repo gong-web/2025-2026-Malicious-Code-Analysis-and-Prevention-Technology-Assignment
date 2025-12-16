@@ -1,250 +1,281 @@
-# YARA-X Manager
+### 一、启动后端
 
-<div align="center">
-
-**一个功能完整的 YARA 规则管理系统,用于恶意代码检测和防护**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18+-61dafb.svg)](https://reactjs.org/)
-
-[功能特性](#功能特性) • [快速开始](#快速开始) • [文档](#文档) • [贡献](#贡献指南)
-
-</div>
-
----
-
-## 项目概述
-
-YARA-X Manager 是一个集成了规则管理、恶意代码扫描、检测引擎的反病毒软件平台。本系统支持:
-
-- ✅ YARA 规则的存储、管理和版本控制
-- ✅ 静态特征检测引擎 (YARA, Loki)
-- ✅ 动态特征检测引擎 (Sigma)
-- ✅ AI 模型集成 (MalConv 等)
-- ✅ Web 前端管理界面
-- ✅ RESTful API 接口
-- ✅ 批量扫描和实时监控
-
-## 项目结构
-
-```
-yara-x-manager/
-├── backend/           # FastAPI 后端服务
-│   ├── app/
-│   │   ├── api/       # API 路由
-│   │   ├── models/    # 数据模型
-│   │   ├── services/  # 业务逻辑
-│   │   └── core/      # 核心配置
-│   ├── requirements.txt
-│   └── main.py
-├── frontend/          # React 前端界面
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   └── utils/
-│   ├── package.json
-│   └── public/
-├── db/                # 数据库相关
-│   ├── migrations/    # 数据库迁移文件
-│   └── schema/        # 数据库架构
-├── tools/             # 辅助工具
-│   ├── yara_loader.py    # YARA 规则加载器
-│   ├── scanner.py        # 文件扫描工具
-│   └── rule_packer.py    # 规则打包工具
-├── tests/             # 测试文件
-├── docs/              # 文档
-├── .env.example       # 环境变量示例
-├── docker-compose.yml # Docker 编排
-└── README.md          # 项目说明
-```
-
-## 功能特性
-
-### 1. YARA 规则管理
-- 规则上传、编辑、删除
-- 规则分类和标签管理
-- 规则版本控制
-- 规则验证和编译
-- 规则搜索和过滤
-
-### 2. 恶意代码检测
-- 单文件扫描
-- 批量目录扫描
-- 实时监控扫描
-- 自定义扫描策略
-- 检测结果报告
-
-### 3. 检测引擎集成
-- **YARA Engine**: 静态特征匹配
-- **Loki Scanner**: 综合检测
-- **Sigma Rules**: 动态行为检测
-- **AI Models**: 机器学习检测
-
-### 4. Web 管理界面
-- Dashboard 仪表盘
-- 规则管理面板
-- 扫描任务管理
-- 检测结果可视化
-- 系统配置管理
-
-## 技术栈
-
-### 后端
-- **框架**: FastAPI (Python 3.8+)
-- **数据库**: PostgreSQL / SQLite
-- **ORM**: SQLAlchemy
-- **任务队列**: Celery + Redis
-- **YARA**: yara-python
-
-### 前端
-- **框架**: React 18+
-- **UI 库**: Ant Design / Material-UI
-- **状态管理**: Redux / Zustand
-- **HTTP 客户端**: Axios
-- **图表**: ECharts / Recharts
-
-### 工具
-- **YARA**: 规则引擎
-- **Loki**: 恶意代码扫描器
-- **Docker**: 容器化部署
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.8+
-- Node.js 16+
-- PostgreSQL 12+ (或 SQLite)
-- Redis (可选,用于任务队列)
-
-### 安装步骤
-
-1. **克隆项目**
-```bash
-cd yara-x-manager
-```
-
-2. **配置环境变量**
-```bash
-cp .env.example .env
-# 编辑 .env 文件,配置数据库连接等信息
-```
-
-3. **启动后端**
 ```bash
 cd backend
-pip install -r requirements.txt
 python main.py
 ```
 
-4. **启动前端**
+访问 http://localhost:8000/docs查看 API 文档
+
+### 二、启动前端
+
 ```bash
 cd frontend
-npm install
-npm start
+npm run dev
 ```
 
-5. **访问应用**
-- 前端: http://localhost:3000
-- 后端 API: http://localhost:8000
-- API 文档: http://localhost:8000/docs
+访问 http://localhost:5173
 
-### Docker 部署
+### 三、静态检测
+
+#### (1)白名单数据库构建
+
+**A.工业级项目白名单数据库准备：**
+
+1.  **下载主数据库**：
+    
+    `RDS_2025.03.1_modern_minimal.db`https://www.nist.gov/itl/ssd/software-quality-group/national-software-reference-library-nsrl/nsrl-download/current-rds
+    
+2.  **下载增量更新 (Delta)**：
+    
+    NIST 会定期发布增量 SQL 文件（如 6月、9月的更新）。
+
+    文件：`RDS_2025.06.1_modern_minimal_delta.sql` 等。
+    
+3.  **合并数据库**：
+    
+    使用本项目 `tools/merge_rds.py`将增量 SQL 应用到主数据库中。
+
+**B.轻量级项目白名单数据库准备：**
+
+将自己准备的良性样本集放在`sample\bengin`文件夹下，运行`tools\create_lite_whitelist.py`即可构建白名单数据库
+
+#### (2) 实战命令示例
+
+场景一：批量检测恶意样本（计算检出率)
 
 ```bash
-docker-compose up -d
+python tools/comprehensive_scan.py "data/samples/malware" --type malicious --workers 8
 ```
 
-## API 文档
-
-启动后端后访问 `http://localhost:8000/docs` 查看 Swagger API 文档。
-
-主要 API 端点:
-
-- `POST /api/rules` - 上传 YARA 规则
-- `GET /api/rules` - 获取规则列表
-- `POST /api/scan` - 启动扫描任务
-- `GET /api/scan/{task_id}` - 查询扫描结果
-- `GET /api/reports` - 获取检测报告
-
-## 开发指南
-
-### 添加新的 YARA 规则
-
-1. 通过 Web 界面上传
-2. 使用 API 接口
-3. 使用 `yara_loader.py` 工具批量导入
+场景二：测试良性样本（计算误报率)
 
 ```bash
-python tools/yara_loader.py --input rules/ --database postgresql://...
+python tools/comprehensive_scan.py "data/samples/benign" --type benign --workers 8
 ```
 
-### 运行测试
+场景三：快速扫描未知文件夹
 
 ```bash
-# 后端测试
-cd backend
-pytest
-
-# 前端测试
-cd frontend
-npm test
+python tools/comprehensive_scan.py "D:\Downloads\SuspiciousFiles" --output "reports/scan_01"
 ```
 
-### 代码规范
+扫描完成后，会在`sample\result`输出目录生成两个文件：
 
-- Python: PEP 8
-- JavaScript: ESLint + Prettier
-- 提交: Conventional Commits
+1. `[目标名]_[时间戳].json`: 包含每个文件的详细扫描信息。
+2. `[目标名]_[时间戳].txt`: 扫描摘要和恶意文件列表。
 
-## 测试指标
+### 四、动态检测
 
-系统测试包括:
+系统提供了基于 Sigma 规则的动态行为检测功能，支持通过 RESTful API 进行事件日志分析、VirusTotal 沙箱行为检测和模拟沙箱分析。动态检测引擎能够识别攻击者在运行时的战术、技术与过程（TTPs），有效检测加壳、混淆的恶意代码。
 
-- ✅ **准确率 (Accuracy)**: 正确检测恶意代码的比例
-- ✅ **误报率 (False Positive Rate)**: 将正常文件误判为恶意的比例
-- ✅ **漏报率 (False Negative Rate)**: 未能检测出恶意代码的比例
-- ✅ **性能**: 扫描速度、内存占用
-- ✅ **规则覆盖率**: YARA 规则的有效性
+**主要功能：**
 
-## 贡献指南
+- **日志文件分析**：支持 JSON、JSONL、YAML 格式的 Windows 事件日志文件上传，自动解析并匹配 Sigma 规则。
+- **事件流检测**：支持通过 API 直接传入事件列表进行实时检测，适用于程序化调用和 SIEM 集成。
+- **VirusTotal 集成**：通过文件哈希获取 VirusTotal 沙箱行为数据，转换为 Sigma 兼容事件格式进行检测。
+- **模拟沙箱分析**：通过静态字符串提取和启发式规则生成模拟系统事件，在不执行文件的情况下进行行为分析。
+- **规则索引优化**：基于 EventID 的倒排索引机制，显著提高大规模规则库的匹配效率。
 
-欢迎提交 Issue 和 Pull Request!
+#### (1) API 接口说明
 
-1. Fork 本项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+系统提供了五个主要的动态检测 API 接口，均位于 `/api/sigma-scan/` 路径下：
 
-## 团队成员
+1. **事件列表检测**：`POST /api/sigma-scan/events`
+   - **功能**：直接传入事件列表进行检测
+   - **请求体**：`{ "events": [{...}, {...}] }`
+   - **限制**：最多 10000 个事件
+   - **适用场景**：实时事件流处理、SIEM 系统集成
+2. **日志文件上传**：`POST /api/sigma-scan/file`
+   - **功能**：上传日志文件进行离线分析
+   - **支持格式**：JSON、JSONL、YAML、纯文本
+   - **文件大小限制**：100MB
+   - **事件数量限制**：50000 个
+   - **适用场景**：历史日志分析、批量检测
+3. **VirusTotal 沙箱检测**：`POST /api/sigma-scan/virustotal`
+   - **功能**：通过文件哈希获取 VirusTotal 行为数据并检测
+   - **请求体**：`{ "file_hash": "sha256...", "use_cache": true }`
+   - **哈希格式**：支持 SHA256（64字符）、SHA1（40字符）、MD5（32字符）
+   - **速率限制**：4次/分钟（VirusTotal Public API 限制）
+   - **适用场景**：已知文件哈希的快速行为分析
+4. **模拟沙箱检测**：`POST /api/sigma-scan/dynamic`
+   - **功能**：上传可执行文件，通过静态字符串提取生成模拟事件
+   - **支持格式**：.exe, .bat, .ps1, .cmd, .dll, .scr
+   - **文件大小限制**：100MB
+   - **适用场景**：安全环境下的可执行文件行为推断
+5. **规则重载**：`POST /api/sigma-scan/reload`
+   - **功能**：重新加载 Sigma 规则库，更新规则缓存
+   - **请求体**：无（空请求体）
+   - **响应**：`{ "message": "Rules reloaded. Active rules: N" }`
+   - **适用场景**：规则文件更新后需要重新加载规则库
+   - **注意事项**：重载过程可能需要数秒时间，期间检测请求可能暂时延迟
 
-- 组长: [姓名] - 项目管理、架构设计
-- 成员1: [姓名] - 后端开发
-- 成员2: [姓名] - 前端开发
-- 成员3: [姓名] - 检测引擎、规则编写
+#### (2) 实战命令示例
 
-## 许可证
+**场景一：检测 Windows 事件日志文件**
 
-MIT License
+使用 curl 命令上传 Sysmon 日志文件进行检测：
 
-## 相关资源
+```bash
+curl -X POST "http://localhost:8000/api/sigma-scan/file" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@sysmon_logs.json"
+```
 
-- [YARA 官方文档](https://yara.readthedocs.io/)
-- [Loki Scanner](https://github.com/Neo23x0/Loki)
-- [Sigma Rules](https://github.com/SigmaHQ/sigma)
-- [VirusTotal](https://www.virustotal.com/)
+使用 Python requests 库：
 
-## 更新日志
+```python
+import requests
 
-### v0.1.0 (2025-11-02)
-- 初始项目结构
-- 基础框架搭建
-- 核心功能开发中
+url = "http://localhost:8000/api/sigma-scan/file"
+with open("sysmon_logs.json", "rb") as f:
+    files = {"file": ("sysmon_logs.json", f, "application/json")}
+    response = requests.post(url, files=files)
+    result = response.json()
+    print(f"总事件数: {result['total_events']}")
+    print(f"匹配数: {result['matches_count']}")
+    for match in result['matches']:
+        print(f"事件索引 {match['event_index']}: {len(match['matches'])} 条规则匹配")
+```
 
----
+**场景二：直接检测事件列表**
 
-**注意**: 本项目用于教育和研究目的,请勿用于非法用途。
+适用于实时事件流处理场景：
+
+```bash
+curl -X POST "http://localhost:8000/api/sigma-scan/events" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "events": [
+      {
+        "EventID": 4688,
+        "Image": "C:\\Windows\\System32\\cmd.exe",
+        "CommandLine": "cmd.exe /c powershell.exe -enc ..."
+      },
+      {
+        "EventID": 1,
+        "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        "CommandLine": "powershell.exe -enc ..."
+      }
+    ]
+  }'
+```
+
+使用 Python requests 库：
+
+```python
+import requests
+
+url = "http://localhost:8000/api/sigma-scan/events"
+events = [
+    {
+        "EventID": 4688,
+        "Image": "C:\\Windows\\System32\\cmd.exe",
+        "CommandLine": "cmd.exe /c net user admin /add"
+    }
+]
+response = requests.post(url, json={"events": events})
+result = response.json()
+print(f"检测结果: {result['matches']}")
+```
+
+**场景三：VirusTotal 沙箱行为检测**
+
+需要先配置 VirusTotal API 密钥（环境变量 `VT_API_KEY`）：
+
+```bash
+# 设置API密钥
+export VT_API_KEY="your_virustotal_api_key"
+
+# 检测文件哈希
+curl -X POST "http://localhost:8000/api/sigma-scan/virustotal" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_hash": "a1b2c3d4e5f6...",
+    "use_cache": true
+  }'
+```
+
+使用 Python requests 库：
+
+```python
+import requests
+import os
+
+# 确保已设置环境变量 VT_API_KEY
+url = "http://localhost:8000/api/sigma-scan/virustotal"
+data = {
+    "file_hash": "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+    "use_cache": True
+}
+response = requests.post(url, json=data)
+result = response.json()
+print(f"总事件数: {result['total_events']}")
+print(f"匹配数: {len(result['matches'])}")
+```
+
+**场景四：模拟沙箱检测可执行文件**
+
+上传可执行文件进行静态字符串分析和行为推断：
+
+```bash
+curl -X POST "http://localhost:8000/api/sigma-scan/dynamic" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@suspicious.exe"
+```
+
+使用 Python requests 库：
+
+```bash
+import requests
+
+url = "http://localhost:8000/api/sigma-scan/dynamic"
+with open("suspicious.exe", "rb") as f:
+    files = {"file": ("suspicious.exe", f, "application/x-msdownload")}
+    response = requests.post(url, files=files)
+    result = response.json()
+    print(f"文件名: {result['filename']}")
+    print(f"文件哈希: {result['file_hash']}")
+    print(f"生成事件数: {result['total_events']}")
+    print(f"匹配数: {result['matches_count']}")
+    print(f"任务ID: {result['task_id']}")
+```
+
+#### (3) 结果解读
+
+所有动态检测 API 返回的结果格式统一，包含以下字段：
+
+- **total_events**：检测的事件总数
+- **matches**：匹配结果列表，每个匹配项包含：
+  - **event_index**：事件在原始列表中的索引（仅事件列表和文件上传接口）
+  - **event_data**：原始事件数据（可选）
+  - **matches**：匹配的规则列表，每个规则包含：
+    - **rule_id**：规则唯一标识符（UUID）
+    - **title**：规则名称
+    - **level**：威胁级别（informational, low, medium, high, critical）
+    - **tags**：规则标签（如 ATT&CK 战术 ID）
+
+**威胁级别说明**：
+
+- **critical**：严重威胁，如勒索软件、APT 攻击链
+- **high**：高危威胁，如后门、远程控制、信息窃取
+- **medium**：中等威胁，如可疑脚本执行、注册表修改
+- **low**：低威胁，如系统工具的正常行为
+- **informational**：信息性告警，用于威胁狩猎
+
+**典型匹配示例**：
+
+检测到 PowerShell 编码执行（`-enc` 参数）时，通常会匹配以下规则：
+
+- `proc_creation_win_susp_powershell_enc_cmd`（medium 级别）
+- `proc_creation_win_powershell_base64_encode`（high 级别）
+
+检测到可疑注册表修改时，可能匹配：
+
+- `registry_set_suspicious_run_key`（medium 级别）
+- `registry_set_userinit_mprlogonscript`（high 级别）
+
+### 五、停止服务
+
+- **后端**: 在终端中按 `Ctrl+C`
+- **前端**: 在终端中按 `Ctrl+C`

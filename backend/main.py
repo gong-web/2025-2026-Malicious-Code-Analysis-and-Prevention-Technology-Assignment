@@ -7,7 +7,12 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import rules, scan, reports, auth, sigma_rules
+from app.api import rules, scan, reports, auth, sigma_rules, sigma_scan
+from app.core.logger import setup_logging
+from app.core.database import init_db
+
+# Initialize logging
+setup_logging()
 
 app = FastAPI(
     title="YARA-X Manager API",
@@ -16,6 +21,11 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Initialize DB on startup
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 # CORS 配置
 app.add_middleware(
@@ -30,6 +40,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
 app.include_router(rules.router, prefix="/api/rules", tags=["YARA 规则"])
 app.include_router(sigma_rules.router, prefix="/api/sigma-rules", tags=["Sigma 规则"])
+app.include_router(sigma_scan.router, prefix="/api/sigma-scan", tags=["Sigma 扫描"])
 app.include_router(scan.router, prefix="/api/scan", tags=["扫描任务"])
 app.include_router(reports.router, prefix="/api/reports", tags=["检测报告"])
 

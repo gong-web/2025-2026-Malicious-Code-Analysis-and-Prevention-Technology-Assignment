@@ -1,0 +1,44 @@
+
+import "pe"
+
+rule PMA_LAB12_04_EXE
+{
+    meta:
+        description = "Detects Lab12-04.exe from Practical Malware Analysis"
+        chapter = "Chapter 12"
+        sample = "Lab12-04.exe"
+        malware_type = "Process Injector"
+        severity = "high"
+        auto_generated = "true"
+        
+    strings:
+        $net1 = "URLDownloadToFileA"
+        $dll1 = "KERNEL32.dll" nocase
+        $dll2 = "ADVAPI32.dll" nocase
+        $dll3 = "urlmon.dll" nocase
+        $proc1 = "CreateRemoteThread"
+        $proc2 = "OpenProcessToken"
+        $proc3 = "OpenProcess"
+        $file1 = "MoveFileA"
+        $file2 = "WriteFile"
+        $file3 = "GetTempPathA"
+        $file4 = "CreateFileA"
+        $import1 = "GetModuleHandleA"
+        $import2 = "GetProcAddress"
+        $import3 = "LoadLibraryA"
+        $susp1 = "\\system32\\wupdmgr.exe" nocase
+        $susp2 = "MSVCRT.dll" nocase
+        $susp3 = "\\winup.exe" nocase
+        $susp4 = "KERNEL32.dll" nocase
+        
+    condition:
+        uint16(0) == 0x5A4D and
+        (pe.characteristics & 0x2000) == 0 and
+        (
+            1 of ($net*) or
+            1 of ($dll*) or
+            2 of ($proc*)
+        ) and (
+            1 of ($file*) or 1 of ($import*) or 1 of ($susp*)
+        )
+}

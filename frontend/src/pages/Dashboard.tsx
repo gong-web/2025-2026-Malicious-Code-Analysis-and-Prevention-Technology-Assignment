@@ -119,11 +119,11 @@ const Dashboard: React.FC = () => {
         <Title level={2}>
           <Space>
             <TrophyOutlined style={{ color: '#1890ff' }} />
-            系统概览
+            恶意代码多维分析与防护系统
             <Badge status="processing" text="实时监控中" />
           </Space>
         </Title>
-        <Text type="secondary">YARA 规则恶意代码检测系统 - 实时监控与分析</Text>
+        <Text type="secondary">集成 静态特征扫描 (YARA) 与 动态行为分析 (Sigma) 的新一代端点防护平台</Text>
       </div>
 
       {/* 安全状态警告 */}
@@ -296,7 +296,7 @@ const Dashboard: React.FC = () => {
                     </>
                   ),
                 },
-                stats.total_threats_detected > 0 && {
+                ...(stats.total_threats_detected > 0 ? [{
                   color: 'red',
                   children: (
                     <>
@@ -307,7 +307,7 @@ const Dashboard: React.FC = () => {
                       </Text>
                     </>
                   ),
-                },
+                }] : []),
                 {
                   color: 'gray',
                   children: (
@@ -320,7 +320,7 @@ const Dashboard: React.FC = () => {
                     </>
                   ),
                 },
-              ].filter(Boolean)}
+              ]}
             />
           </Card>
         </Col>

@@ -1,0 +1,21 @@
+import "pe"
+rule PMA_LAB01_01_DLL
+{
+    meta:
+        description = "Detect lab01-1.dll"
+        author = "Guo Zihan"
+        date = "2025-10-01"
+        md5 = "290934c61de9176ad682ffdd65f0a669"
+        
+    strings:
+        $ip    = "127.26.152.13"
+     
+    condition:
+        // 基本PE文件检查
+        uint16(0) == 0x5A4D and
+        
+        // 检测可疑IP地址同时包含进程创建和睡眠延迟函数
+        #ip and
+        pe.imports("KERNEL32.dll", "CreateProcessA") and
+        pe.imports("KERNEL32.dll", "Sleep")
+}

@@ -1,0 +1,25 @@
+import "pe"
+
+rule PAM_LAB01_01_EXE
+{
+    meta:
+        description = "Detect lab01-01.exe"
+
+    strings:
+        $fake_k32        = "kerne132.dll" nocase
+        $fake_k32_path   = "C:\\Windows\\System32\\kerne132.dll" nocase
+        $lab01_dll_ref   = "lab01-01.dll" nocase
+  
+    condition:
+        uint16(0) == 0x5A4D and
+        $fake_k32 and $fake_k32_path and $lab01_dll_ref and 
+        (
+            pe.imports("KERNEL32.dll", "FindFirstFileA")
+        ) or
+        (
+            pe.imports("KERNEL32.dll", "FindNextFileA")
+        ) or
+        (
+            pe.imports("KERNEL32.dll", "CopyFileA")
+        )
+}

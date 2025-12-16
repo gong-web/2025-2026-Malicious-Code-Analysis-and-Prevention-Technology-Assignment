@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Table, Button, Modal, Form, Input, Select, message, Upload, Space, Tag, Tabs } from 'antd'
-import { PlusOutlined, UploadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { Table, Button, Modal, Form, Input, Select, message, Upload, Space, Tag, Tabs, Tooltip } from 'antd'
+import { PlusOutlined, UploadOutlined, DeleteOutlined, EditOutlined, SyncOutlined } from '@ant-design/icons'
 import axios from 'axios'
 
 const { TextArea } = Input
@@ -10,6 +10,7 @@ const RuleManagement: React.FC = () => {
   const [yaraRules, setYaraRules] = useState<any[]>([])
   const [sigmaRules, setSigmaRules] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [editingRule, setEditingRule] = useState<any>(null)
   const [activeTab, setActiveTab] = useState<string>('yara')
@@ -26,7 +27,7 @@ const RuleManagement: React.FC = () => {
       const response = await axios.get('/api/rules/?limit=10000')
       setYaraRules(response.data)
     } catch (error) {
-      message.error('加载YARA规则失败')
+      // message.error('加载YARA规则失败')
       console.error('YARA规则加载错误:', error)
     } finally {
       setLoading(false)
@@ -40,10 +41,25 @@ const RuleManagement: React.FC = () => {
       setSigmaRules(response.data)
     } catch (error) {
       console.error('Sigma规则加载错误:', error)
-      // Sigma规则暂时不可用时不显示错误
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSync = async () => {
+      setSyncing(true)
+      try {
+          // Sync YARA rules
+          const res = await axios.post('/api/rules/sync')
+          message.success(`同步完成: 新增 ${res.data.added}, 更新 ${res.data.updated}`)
+          loadYaraRules()
+          // Reload Sigma rules (backend auto-loads, just refresh list)
+          loadSigmaRules()
+      } catch (error) {
+          message.error('同步失败')
+      } finally {
+          setSyncing(false)
+      }
   }
 
   const handleCreate = () => {
@@ -76,6 +92,13 @@ const RuleManagement: React.FC = () => {
   const handleSubmit = async (values: any) => {
     try {
       const endpoint = activeTab === 'yara' ? '/api/rules/' : '/api/sigma-rules/'
+      
+      // Adapt fields for Sigma
+      if (activeTab === 'sigma') {
+          values.title = values.name
+          delete values.name
+      }
+      
       if (editingRule) {
         await axios.put(`${endpoint}${editingRule.id}`, values)
         message.success('更新成功')
@@ -241,29 +264,47 @@ const RuleManagement: React.FC = () => {
       }
     },
     {
+      title: '来源',
+      dataIndex: 'source',
+      key: 'source',
+      render: (source: string) => {
+        const isCustom = source === 'custom'
+        return (
+          <Tag color={isCustom ? 'blue' : 'gold'}>
+            {isCustom ? '自定义' : '系统内置'}
+          </Tag>
+        )
+      }
+    },
+    {
       title: '操作',
       key: 'action',
-      render: (_: any, record: any) => (
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-          >
-            编辑
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record.id)}
-          >
-            删除
-          </Button>
-        </Space>
-      ),
+      render: (_: any, record: any) => {
+        const isSystem = record.source === 'system'
+        return (
+          <Space>
+            <Button
+              type="link"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => handleEdit(record)}
+              disabled={isSystem}
+            >
+              编辑
+            </Button>
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleDelete(record.id)}
+              disabled={isSystem}
+            >
+              删除
+            </Button>
+          </Space>
+        )
+      },
     },
   ]
 
@@ -272,6 +313,11 @@ const RuleManagement: React.FC = () => {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <h2>规则管理</h2>
         <Space>
+          <Tooltip title="从本地 data 目录同步规则库">
+              <Button icon={<SyncOutlined spin={syncing} />} onClick={handleSync} loading={syncing}>
+                  同步本地规则
+              </Button>
+          </Tooltip>
           <Upload beforeUpload={handleUpload} showUploadList={false}>
             <Button icon={<UploadOutlined />}>上传规则文件</Button>
           </Upload>
@@ -327,7 +373,11 @@ const RuleManagement: React.FC = () => {
             label="规则内容"
             rules={[{ required: true, message: '请输入规则内容' }]}
           >
-            <TextArea rows={10} placeholder={activeTab === 'yara' ? '输入 YARA 规则...' : '输入 Sigma 规则 (YAML格式)...'} />
+            <TextArea 
+                rows={15} 
+                placeholder={activeTab === 'yara' ? '输入 YARA 规则...' : '输入 Sigma 规则 (YAML格式)...'} 
+                style={{ fontFamily: 'monospace' }}
+            />
           </Form.Item>
 
           <Form.Item name="category" label="分类">
