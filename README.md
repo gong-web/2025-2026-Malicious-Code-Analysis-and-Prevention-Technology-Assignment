@@ -17,7 +17,15 @@ npm run dev
 访问 http://localhost:5173
 
 ### 三、静态检测
-所有检测的样本均放在sample文件夹下，良性样本选择`sample\benign`,恶意样本选择`sample\malware`
+
+本项目内置了**良性样本集**和**恶意样本集**，统一存放在 `sample` 目录下：
+
+- **良性样本路径**：`sample\benign`
+  - 例如：`sample\benign\sample_benign_1\*.exe / *.dll`
+- **恶意样本路径**：`sample\BinaryCollection`
+  - 例如：`sample\BinaryCollection\Chapter_10L\Lab10-01.exe` 等
+
+你也可以使用自己的样本目录，下面的命令示例会说明如何替换为自定义路径。
 
 #### (1)白名单数据库构建
 
@@ -39,32 +47,49 @@ npm run dev
 
 **B.轻量级项目白名单数据库准备：**
 
-将自己准备的良性样本集放在`sample\bengin`文件夹下，运行`tools\create_lite_whitelist.py`即可构建白名单数据库
+1. 将自己准备或项目自带的良性样本放在 `sample\benign` 文件夹下  
+2. 在项目根目录执行：
+
+```bash
+cd tools
+python create_lite_whitelist.py
+```
+
+脚本会自动扫描 `../sample/benign` 下的所有文件，生成一个精简版白名单数据库 `RDS_2025.03.1_modern_minimal.db`，与后端的白名单组件完全兼容。
 
 #### (2) 实战命令示例
 
-场景一：批量检测恶意样本（计算检出率)
+**场景一：批量检测恶意样本（计算检出率）**
+
+使用项目自带的恶意样本集合 `sample\BinaryCollection`：
 
 ```bash
-python tools/comprehensive_scan.py "data/samples/malware" --type malicious --workers 8
+python tools/comprehensive_scan.py "sample/BinaryCollection" --type malicious --workers 8
 ```
 
-场景二：测试良性样本（计算误报率)
+**场景二：测试良性样本（计算误报率）**
+
+使用项目自带的良性样本集合 `sample\benign`：
 
 ```bash
-python tools/comprehensive_scan.py "data/samples/benign" --type benign --workers 8
+python tools/comprehensive_scan.py "sample/benign" --type benign --workers 8
 ```
 
-场景三：快速扫描未知文件夹
+**场景三：快速扫描未知文件夹**
 
 ```bash
 python tools/comprehensive_scan.py "D:\Downloads\SuspiciousFiles" --output "reports/scan_01"
 ```
 
-扫描完成后，会在`sample\result`输出目录生成两个文件：
+说明：
 
-1. `[目标名]_[时间戳].json`: 包含每个文件的详细扫描信息。
-2. `[目标名]_[时间戳].txt`: 扫描摘要和恶意文件列表。
+- 若不指定 `--output`，报告默认保存在 `sample\result` 目录  
+- 上述示例中显式指定了 `--output "reports/scan_01"`，因此报告会写入 `reports\scan_01` 目录
+
+每次扫描会生成两个报告文件：
+
+1. `[目标名]_[时间戳].json`：包含每个文件的详细扫描信息  
+2. `[目标名]_[时间戳].txt`：扫描摘要和恶意文件列表
 
 ### 四、动态检测
 
@@ -227,7 +252,7 @@ curl -X POST "http://localhost:8000/api/sigma-scan/dynamic" \
 
 使用 Python requests 库：
 
-```bash
+```python
 import requests
 
 url = "http://localhost:8000/api/sigma-scan/dynamic"
@@ -241,6 +266,8 @@ with open("suspicious.exe", "rb") as f:
     print(f"匹配数: {result['matches_count']}")
     print(f"任务ID: {result['task_id']}")
 ```
+
+> 说明：`/api/sigma-scan/dynamic` 使用的是**安全模拟沙箱模式**，仅做静态字符串提取与行为推断，**不会真正执行上传的可执行文件**，适合在教学和实验环境中安全使用。
 
 #### (3) 结果解读
 
