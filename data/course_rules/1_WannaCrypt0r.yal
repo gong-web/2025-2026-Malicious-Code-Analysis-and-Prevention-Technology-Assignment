@@ -1,0 +1,49 @@
+rule WannaCry_Ransomware_Variant {
+    meta:
+        description = "Detects WannaCry ransomware variant with CryptoAPI, ransom notes (including Chinese), and file I/O APIs"
+        author = "Grok"
+        date = "2025-10-13"
+        threat = "WannaCry / WanaCrypt0r - File Encryption Ransomware"
+
+    strings:
+        // CryptoAPI 加密函数和提供程序
+        $crypto1 = "Microsoft Enhanced RSA and AES Cryptograaphic Provider" ascii
+        $crypto2 = "CryptAcquireContextA" ascii
+        $crypto3 = "CryptGenKey" ascii
+        $crypto4 = "CryptEncrypt" ascii
+        $crypto5 = "CryptDecrypt" ascii
+        $crypto6 = "CryptReleaseContext" ascii
+        $crypto7 = "CryptImportKey" ascii
+        $crypto8 = "CryptDestroyKey" ascii
+        
+        // WannaCry 核心签名 (UTF-16)
+        $sig = "WanaCrypt0r" ascii wide
+        
+        // 赎金路径 (多语言，包括中文)
+        $path1 = "msg/m_chinese (simplified).wnry" ascii
+        $path2 = "msg/m_chinese (traditional).wnry" ascii
+        $path3 = "msg/m_english.wnry" ascii  // 补充英语以提升覆盖
+        
+        // 文件操作 API (I/O 和属性修改)
+        $file1 = "CreateFileA" ascii
+        $file2 = "ReadFile" ascii
+        $file3 = "WriteFile" ascii
+        $file4 = "SetFileTime" ascii
+        $file5 = "SetFileAttributesW" ascii
+        $file6 = "GetFileSizeEx" ascii
+        $file7 = "DeleteFileW" ascii
+        $file8 = "MoveFileExW" ascii
+
+    condition:
+        // 必须是 PE 文件
+        uint16(0) == 0x5A4D and  // DOS 签名
+        uint32(uint32(0x3C)) == 0x4550 and  // NT 签名
+        
+        // 高置信度匹配：加密 + 签名 + 路径 或 文件操作组合
+        (
+            $sig and (4 of ($crypto*))  // 签名 + 至少 4 个加密函数
+        ) and
+        (
+            (any of ($path*)) and (4 of ($file*))  // 中文/英语路径 + 至少 4 个文件操作
+        )
+}

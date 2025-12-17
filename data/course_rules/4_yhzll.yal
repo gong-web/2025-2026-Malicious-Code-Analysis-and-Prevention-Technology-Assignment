@@ -1,0 +1,29 @@
+rule Syste2_Persistence_Dropper
+{
+    meta:
+        description = "Detect 4-yhzll"
+
+    strings:
+        /* 勒索相关的字符串 */
+        $r1 = "Wana Girlfirend DecryptOr 2.0"
+        $r2 = "Girlfriend.txt"
+        $r3 = "check payment"
+        $r4 = "decrpt"
+        $r5 = "chinese(simple)"
+
+        /* 进程控制、进程执行相关API */
+        $e1 = "taskkill /f /im explorer.exe"
+        $e2 = "taskmgr.exe"
+        $e3 = "WinExec"
+        $e4 = "ShellExecuteA"
+
+        /* 路径字符串 */
+        $p1 = "C:\\Windows\\System32\\Syste2.exe"
+        $p2 = "software\\microsoft\\windows\\CurrentVersion\\Run\\Syste2.exe"
+
+
+    condition:
+        $p1 and $p2 and 
+        ( 2 of ($e1, $e2, $e3, $e4) ) and 
+        ( 2 of ($r1, $r2, $r3, $r4, $r5) )
+}

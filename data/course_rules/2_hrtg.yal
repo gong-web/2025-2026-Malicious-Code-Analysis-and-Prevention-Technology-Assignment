@@ -1,0 +1,16 @@
+rule BlackCoffinVirus_Simple {
+    meta:
+        description = "Simplified detection for Black Man Carrying Coffin Virus"
+        author = "Your Analysis - Optimized"
+
+    strings:
+        $string1 = "http://ns.adobe.com/xap/1.0/"
+        $string2 = "http://ns.adobe.com/photoshop/1.0/mm/"
+        $string3 = "http://purl.org/dc/elements/1.1/"
+        $string4 = "http://ns.adobe.com/exif/1.0/"
+        $xmp = "Adobe Photoshop CS4 Windows" ascii wide nocase
+
+    condition:
+        uint16(0) == 0x5A4D and  // PE check
+        2 of ($string*) and $xmp 
+}

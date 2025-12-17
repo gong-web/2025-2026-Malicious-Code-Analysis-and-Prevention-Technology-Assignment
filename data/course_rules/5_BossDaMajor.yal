@@ -1,0 +1,26 @@
+rule Detect_5_BossDaMajor {
+    meta:
+        description = "Detects VBS-based dropper with WScript objects, temp paths, mrsmajor persistence, and ShellExecuteExA import"
+
+    strings:
+        // VBS对象创建
+        $s1 = "createobject(\"Wscript.shell\")" ascii wide
+        $s2 = "createobject(\"Scripting.filesystemobject\")" ascii wide
+        
+        // 路径和环境变量
+        $s3 = "%TEMP%" ascii wide
+        $s4 = "specialfolders(\"DESKTOP\")" ascii wide
+        $s5 = "mrsmajor" ascii wide fullword  // 伪装路径
+        
+        // 执行和延迟
+        $s6 = "wscript.sleep" ascii wide
+        $s7 = "wscript.exe" ascii wide
+        
+        // 导入表匹配
+        $imp_api = "ShellExecuteExA"
+        $imp_dll = "SHELL32.DLL" nocase
+
+    condition:
+        all of ($s1, $s2, $s3, $s4, $s5, $s6, $s7) and 
+        ($imp_api or $imp_dll)     
+}
