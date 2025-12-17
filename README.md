@@ -1,5 +1,3 @@
-# 用户手册
-
 ### 项目简介
 
 本项目是基于 **YARA** 与 **Sigma** 规则的恶意代码静态与动态分析平台，面向课程实验与小型实战环境设计，主要目标是：
@@ -43,7 +41,17 @@ cd frontend
 npm run dev
 ```
 
-访问 http://localhost:5173
+访问 http://localhost:5174，前端主界面如下所示。
+
+![image-20251217134414639](assets/image-20251217134414639.png)
+
+在双模扫描中心页面，可点击或拖拽文件进行静态测试与动态测试，点击文件检测框右上角的按钮可实现静态测试与动态测试的切换。
+
+![image-20251217134459405](assets/image-20251217134459405.png)
+
+规则管理库页面可管理项目的YARA规则和sigma规则库，可在前端上传规则文件或新建规则。
+
+![image-20251217134638719](assets/image-20251217134638719.png)
 
 ### 三、静态检测
 
@@ -88,19 +96,19 @@ python tools/course_scan.py
 
 **A.工业级项目白名单数据库准备：**
 
-1.  **下载主数据库**：
-    
-    `RDS_2025.03.1_modern_minimal.db`https://www.nist.gov/itl/ssd/software-quality-group/national-software-reference-library-nsrl/nsrl-download/current-rds
-    
-2.  **下载增量更新 (Delta)**：
-    
-    NIST 会定期发布增量 SQL 文件（如 6月、9月的更新）。
+1. **下载主数据库**：
 
-    文件：`RDS_2025.06.1_modern_minimal_delta.sql` 等。
-    
-3.  **合并数据库**：
-    
-    使用本项目 `tools/merge_rds.py`将增量 SQL 应用到主数据库中。
+   `RDS_2025.03.1_modern_minimal.db`https://www.nist.gov/itl/ssd/software-quality-group/national-software-reference-library-nsrl/nsrl-download/current-rds
+
+2. **下载增量更新 (Delta)**：
+
+   NIST 会定期发布增量 SQL 文件（如 6月、9月的更新）。
+
+   文件：`RDS_2025.06.1_modern_minimal_delta.sql` 等。
+
+3. **合并数据库**：
+
+   使用本项目 `tools/merge_rds.py`将增量 SQL 应用到主数据库中。
 
 **B.轻量级项目白名单数据库准备：**
 
