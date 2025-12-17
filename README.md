@@ -55,7 +55,7 @@ npm run dev
 
 ### 三、静态检测
 
-#### 课本恶意样本与额外五个真实恶意样本的检测
+#### 3.1 课本恶意样本与额外五个真实恶意样本的检测
 
 本项目在data文件夹下存放搜集的yara规则、sigma规则以及编写的教材样本的yara规则。
 
@@ -81,7 +81,7 @@ workspace/
 python tools/course_scan.py
 ```
 
-#### **拓展virusshare检测**
+#### **3.2 拓展virusshare检测**
 
 本项目内置了**良性样本集**和**恶意样本集**，统一存放在 `sample` 目录下：
 
@@ -373,3 +373,4 @@ with open("suspicious.exe", "rb") as f:
 - **后端**: 在终端中按 `Ctrl+C`
 
 - **前端**: 在终端中按 `Ctrl+C`
+
